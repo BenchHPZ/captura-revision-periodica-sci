@@ -1,0 +1,41 @@
+# Dependencias
+node_modules/
+.pnp
+.pnp.js
+
+# Compilación de Next.js
+web/.next/
+web/out/
+web/build/
+web/.vercel/
+next-env.d.ts
+
+# Variables de entorno
+.env
+.env.*
+!.env.example
+
+# Supabase
+supabase/.branches/
+supabase/.temp/
+supabase/.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Productos operativos: no se versionan, se depositan en la carpeta de trabajo
+*.pptx
+*.xlsx
+salidas/
+exportaciones/
+
+# Sistema operativo y editores
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
