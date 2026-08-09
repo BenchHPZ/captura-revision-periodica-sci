@@ -9,6 +9,7 @@ web/out/
 web/build/
 web/.vercel/
 next-env.d.ts
+*.tsbuildinfo
 
 # Variables de entorno
 .env

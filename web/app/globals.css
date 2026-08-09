@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-white text-vw-deep-space font-text;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-head;
+  }
+}
