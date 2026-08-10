@@ -36,11 +36,18 @@ export interface Sistema {
   activo: boolean;
 }
 
+export interface CicloFechas {
+  ejecucion_inicio?: string;
+  ejecucion_fin?: string;
+  entrega?: string;
+  supervision_fin?: string;
+}
+
 export interface CicloConfig {
   sistemas_activos: string[];
   captura_directa: string[];
   imagen: { lado_max: number; calidad: number; formato: string };
-  fechas?: Record<string, string>;
+  fechas?: CicloFechas;
 }
 
 export interface Ciclo {
@@ -94,6 +101,19 @@ export interface Foto {
   bytes: number | null;
   orden: number;
   origen: OrigenFoto;
+  subida: string;
+}
+
+export type EstadoEntrada = "pendiente" | "asignada" | "descartada";
+
+export interface Entrada {
+  id: string;
+  ciclo_id: string;
+  ruta: string;
+  nombre_original: string | null;
+  bytes: number | null;
+  estado: EstadoEntrada;
+  foto_id: string | null;
   subida: string;
 }
 

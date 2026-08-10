@@ -255,3 +255,32 @@ no condicionar el proyecto a la estandarización de formatos, que corre por sepa
 **Revisión prevista.** Una vez estandarizados los formatos, evaluar la generación automática del
 libro de RAG a partir de los puntos ya capturados. Los datos necesarios se están levantando desde
 este primer ciclo, de modo que la funcionalidad no exigirá recapturar nada.
+
+---
+
+## D-13 · El código del elemento es único por sistema, no por ciclo
+
+**Estado:** vigente
+
+**Contexto.** El diseño original de D-03 asumía que `codigo` sería único en todo el ciclo, y así
+quedó la primera versión de la restricción en `elementos`. Al correr `extraer_rags.py` contra los
+cinco RAG reales de agosto, el propio catálogo la contradijo: `HC1-1` nombra un hidrante exterior en
+el RAG 2.2 y, por separado, la válvula que cierra ese mismo hidrante en el RAG 2.8. Son dos elementos
+físicos distintos —un hidrante y una válvula— que la instrucción nombra igual porque comparten
+ubicación, no porque sea un error de captura. Con la restricción original, cargar el catálogo
+completo habría rechazado el segundo como duplicado del primero; el script lo hizo evidente de
+inmediato al comparar `(sistema, código)` entre los 221 elementos extraídos.
+
+**Decisión.** La restricción de unicidad de `elementos.codigo` quedó en `(ciclo_id, sistema_id,
+codigo)`, no en `(ciclo_id, codigo)`. Cada sistema es su propio espacio de nombres.
+
+**Consecuencias.** Ninguna consulta que ya filtraba por sistema antes de buscar por código se ve
+afectada — es el caso normal, porque la aplicación siempre sabe en qué sistema está trabajando (la
+URL de captura y el panel de recepción llevan el sistema explícito). El único lugar que había que
+ajustar a mano fue la conciliación de la importación masiva (Flujo 5), que ahora concilia por
+`(sistema, código)` y no por código solo.
+
+**Cómo se detectó.** No por análisis previo, sino por instrumentar el extractor para reportar
+duplicados y correrlo contra los PDF reales antes de cargar nada — ver
+docs/flujos-de-usuario.md Flujo 1 y `scripts/extraer_rags.py`. Queda como recordatorio de que el
+catálogo real es la prueba de fondo para el modelo de datos, no al revés.

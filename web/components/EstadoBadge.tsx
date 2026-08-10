@@ -14,3 +14,7 @@ export function EstadoBadge({ estado }: { estado: Estado }) {
     </span>
   );
 }
+
+export function etiquetaEstado(estado: Estado): string {
+  return ESTILO[estado].texto;
+}

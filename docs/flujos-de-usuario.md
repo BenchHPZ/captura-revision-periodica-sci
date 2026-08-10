@@ -85,8 +85,9 @@ Para los tres sistemas que ejecutan los especialistas de campo y que siguen lleg
 5. Elige sistema, elemento y momento, y confirma la asignación.
    - Las fotografías se mueven a la ruta definitiva del elemento y se renombran.
    - Salen de la rejilla de pendientes.
-6. Desde el aviso de asignación abre el formulario del elemento y captura las descripciones y los
-   puntos de revisión que el especialista reportó por mensaje.
+   - La confirmación lleva directo al formulario de ese elemento — no hace falta un paso aparte
+     para abrirlo.
+6. Captura ahí las descripciones y los puntos de revisión que el especialista reportó por mensaje.
 7. Repite hasta vaciar la rejilla. Lo que quede visible es, por definición, lo que falta por
    clasificar.
 
@@ -193,14 +194,13 @@ las fuentes institucionales instaladas y PowerPoint para verificar el resultado.
 
 ## Estados de un elemento
 
-```
-   sin_iniciar ──────────► parcial ──────────► completo
-        ▲                     │  ▲                  │
-        │                     │  └──────────────────┘
-        │                     │      falta un dato o
-        └─────────────────────┘      cambia la plantilla
-             se elimina todo
-              lo capturado
+```mermaid
+stateDiagram-v2
+    [*] --> sin_iniciar
+    sin_iniciar --> parcial: primera foto o texto
+    parcial --> completo: se cumple todo lo obligatorio
+    completo --> parcial: falta un dato o cambia la plantilla
+    parcial --> sin_iniciar: se elimina todo lo capturado
 ```
 
 | Estado | Significado |

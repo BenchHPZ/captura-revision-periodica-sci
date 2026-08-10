@@ -4,63 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { DEPOSITO } from "@/lib/datos";
-import { calcularEstado } from "@/lib/estado";
-import type { Plantilla } from "@/lib/tipos";
-
-async function contarFotosPorMomento(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  registroId: string,
-): Promise<Record<string, number>> {
-  const { data, error } = await supabase.from("fotos").select("momento").eq("registro_id", registroId);
-  if (error) throw error;
-  const conteo: Record<string, number> = {};
-  for (const fila of data ?? []) {
-    conteo[fila.momento] = (conteo[fila.momento] ?? 0) + 1;
-  }
-  return conteo;
-}
-
-async function aseguraRegistro(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  elementoId: string,
-): Promise<string> {
-  const { data: existente, error: errorLectura } = await supabase
-    .from("registros")
-    .select("id")
-    .eq("elemento_id", elementoId)
-    .maybeSingle();
-  if (errorLectura) throw errorLectura;
-  if (existente) return existente.id;
-
-  const { data: creado, error: errorAlta } = await supabase
-    .from("registros")
-    .insert({ elemento_id: elementoId })
-    .select("id")
-    .single();
-  if (errorAlta) throw errorAlta;
-  return creado.id;
-}
-
-async function recalcularYGuardarEstado(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  registroId: string,
-  plantilla: Plantilla,
-) {
-  const { data: registro, error } = await supabase
-    .from("registros")
-    .select("como_se_encontro, que_se_realizo, pendientes, valores")
-    .eq("id", registroId)
-    .single();
-  if (error) throw error;
-
-  const fotosPorMomento = await contarFotosPorMomento(supabase, registroId);
-  const estado = calcularEstado(plantilla, registro, fotosPorMomento);
-
-  const { error: errorUpdate } = await supabase.from("registros").update({ estado }).eq("id", registroId);
-  if (errorUpdate) throw errorUpdate;
-
-  return estado;
-}
+import { aseguraRegistro, plantillaDe, recalcularYGuardarEstado } from "@/lib/registros";
 
 export interface EntradaFoto {
   elementoId: string;
@@ -130,26 +74,12 @@ export async function eliminarFoto(fotoId: string, cicloId: string, sistemaId: s
   return { estado };
 }
 
-async function plantillaDe(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  cicloId: string,
-  sistemaId: string,
-): Promise<Plantilla> {
-  const { data, error } = await supabase
-    .from("plantillas")
-    .select("fotos, puntos, texto_libre")
-    .eq("ciclo_id", cicloId)
-    .eq("sistema_id", sistemaId)
-    .single();
-  if (error) throw error;
-  return data as Plantilla;
-}
-
 export interface IdsElemento {
   elementoId: string;
   sistemaClave: string;
   cicloId: string;
   sistemaId: string;
+  esCapturaDirecta: boolean;
 }
 
 /**
@@ -193,6 +123,16 @@ export async function guardarYSiguiente(ids: IdsElemento, formData: FormData) {
   const plantilla = await plantillaDe(supabase, ids.cicloId, ids.sistemaId);
   await recalcularYGuardarEstado(supabase, registroId, plantilla);
   revalidatePath("/capturar", "layout");
+  revalidatePath("/recepcion");
+
+  // "Guardar y siguiente" es un recorrido ordenado (RF-06) que sólo tiene
+  // sentido en captura directa. Un elemento de recepción se abrió para
+  // completar el texto de fotos ya asignadas (RF-14, Flujo 3); al guardar
+  // vuelve a recepción, no hay "siguiente" en esa lista porque no hay
+  // lista — la entrada de fotos es lo que marca qué sigue.
+  if (!ids.esCapturaDirecta) {
+    redirect("/recepcion");
+  }
 
   const { data: elementosData, error: errorLista } = await supabase
     .from("elementos")

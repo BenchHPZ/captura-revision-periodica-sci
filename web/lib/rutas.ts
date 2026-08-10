@@ -27,3 +27,9 @@ export function rutaFoto(
   const numero = String(orden).padStart(2, "0");
   return `${cicloClave}/${sistemaClave}/${segmento(codigoElemento)}/${momento}_${numero}.jpg`;
 }
+
+/** Área de espera para fotografías que llegan sin clasificar (Flujo 3).
+ * Ver docs/modelo-de-datos.md §5:  {ciclo}/_entrada/{uuid}.jpg */
+export function rutaEntrada(cicloClave: string): string {
+  return `${cicloClave}/_entrada/${crypto.randomUUID()}.jpg`;
+}

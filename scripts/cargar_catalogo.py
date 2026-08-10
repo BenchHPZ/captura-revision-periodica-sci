@@ -50,6 +50,14 @@ CONFIG_POR_DEFECTO = {
     ],
     "captura_directa": ["botones_avisadores", "hidrantes_interiores"],
     "imagen": {"lado_max": 2560, "calidad": 88, "formato": "jpeg"},
+    # Calendario del ciclo piloto (docs/requerimientos.md §3). El tablero
+    # de la fase 4 usa ejecucion_fin para calcular el ritmo necesario.
+    "fechas": {
+        "ejecucion_inicio": "2026-08-01",
+        "ejecucion_fin": "2026-08-19",
+        "entrega": "2026-08-20",
+        "supervision_fin": "2026-08-30",
+    },
 }
 
 

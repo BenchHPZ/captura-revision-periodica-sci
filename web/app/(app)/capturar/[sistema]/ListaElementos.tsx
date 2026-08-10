@@ -4,17 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { EstadoBadge } from "@/components/EstadoBadge";
 import type { ElementoConEstado } from "@/lib/datos";
-
-// NFD separa cada letra acentuada en la letra base + una marca combinante
-// (bloque Unicode U+0300-U+036F); quitar esa marca permite comparar "á"
-// con "a" al buscar. Se arma con códigos \uXXXX, no con el caracter
-// combinante en crudo, porque ese caracter se renderiza pegado al
-// vecino en cualquier editor y es fácil copiarlo mal sin notarlo.
-const MARCA_DIACRITICA = new RegExp("[̀-ͯ]", "g");
-
-function normaliza(texto: string): string {
-  return texto.toLowerCase().normalize("NFD").replace(MARCA_DIACRITICA, "");
-}
+import { normaliza } from "@/lib/texto";
 
 export function ListaElementos({
   elementos,

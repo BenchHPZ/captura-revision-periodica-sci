@@ -26,8 +26,28 @@ export default async function InicioPage() {
         </p>
       </Link>
 
+      <Link
+        href="/recepcion"
+        className="block border border-vw-dsb-20 p-4 transition hover:border-vw-vivid-green"
+      >
+        <span className="font-medium text-vw-deep-space">Recepción</span>
+        <p className="mt-1 text-sm text-vw-dsb-60">
+          Clasificar las fotografías que llegan por WhatsApp de los demás sistemas.
+        </p>
+      </Link>
+
+      <Link
+        href="/tablero"
+        className="block border border-vw-dsb-20 p-4 transition hover:border-vw-vivid-green"
+      >
+        <span className="font-medium text-vw-deep-space">Tablero</span>
+        <p className="mt-1 text-sm text-vw-dsb-60">
+          Avance de mi captura y de lo recibido por recepción, con exportación a CSV y JSON.
+        </p>
+      </Link>
+
       <div className="border border-vw-dsb-20 bg-vw-vg-10 p-4 text-sm text-vw-deep-space">
-        Recepción, tablero y catálogo se construyen en las siguientes fases.
+        El catálogo se construye en la siguiente fase.
       </div>
     </div>
   );

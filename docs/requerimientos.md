@@ -122,7 +122,7 @@ supervisión por coordinación de turno del 21 al 30.
 
 | ID | Requerimiento |
 |---|---|
-| RD-01 | Cada elemento tiene un identificador único y estable, independiente del número que lleva rotulado en campo |
+| RD-01 | Cada elemento tiene un identificador único y estable dentro de su sistema, independiente del número que lleva rotulado en campo |
 | RD-02 | El identificador se acompaña de zona, ubicación y tipo, de modo que el elemento quede determinado sin ambigüedad |
 | RD-03 | Los puntos de revisión son datos configurables, no estructura fija: un ciclo puede tener puntos completamente distintos al anterior |
 | RD-04 | La configuración del ciclo, el catálogo y los resultados se manejan como tres conjuntos separados |

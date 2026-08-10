@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { reducirImagen } from "@/lib/imagen";
@@ -20,6 +21,9 @@ interface Props {
   plantilla: Plantilla;
   registro: Registro | null;
   fotos: FotoConUrl[];
+  volverHref: string;
+  volverEtiqueta: string;
+  esCapturaDirecta: boolean;
 }
 
 interface FotoLocal {
@@ -41,7 +45,17 @@ function conteoPorMomento(fotos: FotoLocal[]): Record<string, number> {
   return conteo;
 }
 
-export function Formulario({ ciclo, sistema, elemento, plantilla, registro, fotos }: Props) {
+export function Formulario({
+  ciclo,
+  sistema,
+  elemento,
+  plantilla,
+  registro,
+  fotos,
+  volverHref,
+  volverEtiqueta,
+  esCapturaDirecta,
+}: Props) {
   const claveDraft = `captura:borrador:${elemento.id}`;
 
   const [textos, setTextos] = useState({
@@ -188,17 +202,15 @@ export function Formulario({ ciclo, sistema, elemento, plantilla, registro, foto
     sistemaClave: sistema.clave,
     cicloId: ciclo.id,
     sistemaId: sistema.id,
+    esCapturaDirecta,
   });
 
   const estadoActual = calcularEstado(plantilla, { ...textos, valores }, conteoPorMomento(fotosLocales));
 
   return (
     <div className="pb-24">
-      <Link
-        href={`/capturar/${sistema.clave}`}
-        className="text-sm text-vw-dsb-60 hover:text-vw-vivid-green"
-      >
-        ← {sistema.nombre}
+      <Link href={volverHref} className="text-sm text-vw-dsb-60 hover:text-vw-vivid-green">
+        ← {volverEtiqueta}
       </Link>
 
       <div className="mt-2 flex items-start justify-between gap-3">
@@ -279,10 +291,8 @@ export function Formulario({ ciclo, sistema, elemento, plantilla, registro, foto
 
         <div className="fixed inset-x-0 bottom-0 border-t border-vw-dsb-20 bg-white p-4">
           <div className="mx-auto max-w-3xl">
-            <button
-              type="submit"
-              className="w-full bg-vw-vivid-green px-4 py-3 font-medium text-white transition hover:bg-vw-vg-80"
-              onClick={(evento) => {
+            <BotonGuardar
+              alEnviar={(evento) => {
                 const pendientesLista = faltantes(plantilla, { ...textos, valores }, conteoPorMomento(fotosLocales));
                 if (pendientesLista.length > 0) {
                   const continuar = window.confirm(
@@ -295,13 +305,28 @@ export function Formulario({ ciclo, sistema, elemento, plantilla, registro, foto
                 }
                 window.localStorage.removeItem(claveDraft);
               }}
-            >
-              Guardar y siguiente
-            </button>
+            />
           </div>
         </div>
       </form>
     </div>
+  );
+}
+
+/** useFormStatus() sólo ve el estado del <form> más cercano cuando se
+ * llama desde un hijo de ese form — ver la misma nota en
+ * app/(app)/recepcion/Recepcion.tsx (BotonAsignar). */
+function BotonGuardar({ alEnviar }: { alEnviar: (evento: React.MouseEvent<HTMLButtonElement>) => void }) {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="w-full bg-vw-vivid-green px-4 py-3 font-medium text-white transition hover:bg-vw-vg-80 disabled:cursor-not-allowed disabled:bg-vw-dsb-20 disabled:text-vw-dsb-60"
+      onClick={alEnviar}
+    >
+      {pending ? "Guardando…" : "Guardar y siguiente"}
+    </button>
   );
 }
 

@@ -7,18 +7,16 @@ Supabase Storage y la base conserva únicamente su ruta.
 
 ## 1. Panorama
 
-```
-        ciclos ──────┬──────────────┬─────────────────┐
-                     │              │                 │
-                     ▼              ▼                 ▼
-                 plantillas     elementos          entrada
-                     ▲              │                 │
-                     │              ▼                 │
-        sistemas ────┴          registros             │
-                                    │                 │
-                                    ▼                 │
-                                  fotos  ◄────────────┘
-                                                (al asignar)
+```mermaid
+erDiagram
+    ciclos ||--o{ plantillas : "define por ciclo"
+    ciclos ||--o{ elementos : "cataloga por ciclo"
+    ciclos ||--o{ entrada : "recibe por ciclo"
+    sistemas ||--o{ plantillas : "una por sistema"
+    sistemas ||--o{ elementos : "clasifica"
+    elementos ||--o| registros : "lo capturado"
+    registros ||--o{ fotos : "sus fotografías"
+    entrada |o--o| fotos : "al asignar (Flujo 3)"
 ```
 
 Tres conjuntos con ciclos de vida distintos:
@@ -356,5 +354,9 @@ políticas se limitan a exigir sesión autenticada para leer y escribir. El camp
 `elementos` y `capturado_por` en `registros` ya permiten, sin migración, restringir después a cada
 especialista los elementos que le corresponden.
 
-El depósito de Storage no admite acceso anónimo ni en lectura ni en escritura. La subida se realiza
-con URL firmada emitida para una sesión válida.
+El depósito de Storage no admite acceso anónimo ni en lectura ni en escritura: `0004_storage.sql`
+exige sesión autenticada para las cuatro operaciones (leer, subir, actualizar, borrar). La subida y
+el movimiento de objetos (al asignar una entrada, ver Flujo 3) se hacen directo con esa sesión, sin
+URL firmada — ver D-06 para por qué se descartó esa alternativa. La lectura de fotografías ya
+asignadas sí usa URL firmada de vigencia corta (una hora), generada por el servidor al construir la
+pantalla, porque ahí sí conviene no exponer la sesión completa sólo para mostrar una miniatura.

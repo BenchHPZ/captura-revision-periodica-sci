@@ -34,48 +34,69 @@ como los puntos a supervisar se puedan modificar durante la ejecución sin inter
 
 ## Cómo está armado
 
-```
-  Teléfono / PC
-        │
-        ▼
-  Next.js en Vercel  ── interfaz y API ──┐
-        │                                │
-        │ subida directa                 ▼
-        └───────────────────────►   Supabase
-                                    ├─ PostgreSQL   configuración, catálogo, resultados
-                                    ├─ Storage      fotografías (depósito privado)
-                                    └─ Auth         sesión
+```mermaid
+flowchart TD
+    U["Teléfono / PC"]
+    N["Next.js en Vercel<br/>páginas y acciones de servidor"]
+    subgraph S["Supabase"]
+        DB[("PostgreSQL<br/>configuración, catálogo, resultados")]
+        ST[("Storage<br/>fotografías, depósito privado")]
+        AU["Auth · sesión"]
+    end
+    L["Equipo local<br/>generar_reporte.py"]
+    F["Informe_&lt;Mes&gt;.pptx"]
 
-  ── al cierre del ciclo ─────────────────────────────────
+    U -- páginas, formularios --> N
+    N -- lee y escribe --> DB
+    N -- valida sesión --> AU
+    U -- "fotografías, subida directa (D-06)" --> ST
+    N -.->|"URL firmada para mostrarlas"| ST
 
-  Equipo local:  generar_reporte.py  ──lee los datos──►  Informe_<Mes>.pptx
+    L -- lee el ciclo --> DB
+    L -- "al cierre del ciclo" --> F
 ```
 
 La captura y el seguimiento viven en la nube para poder usarse desde teléfono personal dentro de la
-planta, sin depender de la red corporativa. La generación del informe se ejecuta en el equipo local
-porque necesita la plantilla corporativa, las fuentes institucionales y PowerPoint para verificar el
-resultado. El porqué de cada pieza está en [`docs/decisiones.md`](docs/decisiones.md).
+planta, sin depender de la red corporativa. Las fotografías van del navegador directo a Storage —
+Next.js nunca las recibe, sólo registra la ruta resultante y firma URL de lectura corta para
+mostrarlas (D-06). La generación del informe se ejecuta en el equipo local porque necesita la
+plantilla corporativa, las fuentes institucionales y PowerPoint para verificar el resultado. El
+porqué de cada pieza está en [`docs/decisiones.md`](docs/decisiones.md).
 
 ## Estructura del repositorio
 
 ```
 captura-sci/
 ├── README.md
-├── docs/                        documentación del proyecto
+├── docs/                             documentación del proyecto
 │   ├── requerimientos.md
 │   ├── modelo-de-datos.md
 │   ├── flujos-de-usuario.md
 │   └── decisiones.md
-├── web/                         aplicación Next.js
-│   ├── app/                     rutas: (app) exige sesión, login/ no
-│   └── lib/supabase/            clientes de navegador, servidor y proxy
+├── web/                              aplicación Next.js
+│   ├── app/
+│   │   ├── login/                    fuera del grupo (app): sin sesión no se llega aquí
+│   │   └── (app)/                    layout.tsx exige sesión; encabezado y cerrar sesión
+│   │       ├── page.tsx              inicio: enlaces a Capturar y Recepción
+│   │       ├── capturar/             Fase 2 — sistemas, lista por sistema, formulario
+│   │       │   └── [sistema]/[id]/   Formulario.tsx (cliente) + actions.ts (servidor)
+│   │       └── recepcion/            Fase 3 — Recepcion.tsx (cliente) + actions.ts (servidor)
+│   ├── components/EstadoBadge.tsx
+│   └── lib/
+│       ├── supabase/                 clientes de navegador, servidor y proxy
+│       ├── tipos.ts                  formas compartidas, reflejan el diccionario de datos
+│       ├── estado.ts                 calcularEstado() — única fuente de verdad, ver §4
+│       ├── datos.ts                  consultas de servidor ("server-only")
+│       ├── registros.ts              aseguraRegistro/recalcularYGuardarEstado, compartido
+│       ├── imagen.ts                 reducción a 2560px/calidad 88 con orientación EXIF
+│       └── rutas.ts, texto.ts        rutas de Storage; búsqueda sin acentos
 ├── supabase/
-│   ├── migrations/              0001 esquema · 0002 sistemas fijos · 0003 RLS · 0004 Storage
-│   └── seed/                    catálogo y plantillas ya extraídos, por ciclo
-└── scripts/                     utilerías en Python (requirements.txt)
-    ├── extraer_rags.py          RAG en PDF → supabase/seed/{catalogo,plantillas}_<ciclo>.json
-    ├── cargar_catalogo.py       ese JSON → Supabase (valida en seco sin --confirmar)
-    └── generar_reporte.py       Supabase → informe mensual en PowerPoint (fase 6, aún no escrito)
+│   ├── migrations/                   0001 esquema · 0002 sistemas fijos · 0003 RLS · 0004 Storage
+│   └── seed/                         catálogo y plantillas ya extraídos, por ciclo
+└── scripts/                          utilerías en Python (requirements.txt)
+    ├── extraer_rags.py               RAG en PDF → supabase/seed/{catalogo,plantillas}_<ciclo>.json
+    ├── cargar_catalogo.py            ese JSON → Supabase (valida en seco sin --confirmar)
+    └── generar_reporte.py            Supabase → informe mensual en PowerPoint (fase 6, aún no escrito)
 ```
 
 El repositorio vive **fuera** de la carpeta sincronizada de Google Drive. En la carpeta de trabajo se
@@ -173,9 +194,9 @@ dependan de ellas.
 | Fase | Entregable | Estado |
 |---|---|---|
 | 0 | Documentación y estructura del repositorio | Terminada |
-| 1 | Base de datos, seguridad, sesión y carga inicial del catálogo | Código listo; falta ejecutarlo contra un proyecto de Supabase real |
+| 1 | Base de datos, seguridad, sesión y carga inicial del catálogo | Proyecto enlazado y credenciales en `web/.env.local`; falta aplicar el esquema |
 | 2 | Captura desde teléfono con formulario configurable | Código listo; falta probarlo en un teléfono real |
-| 3 | Recepción y clasificación de evidencia externa | Pendiente |
+| 3 | Recepción y clasificación de evidencia externa | Código listo; falta probarlo con fotos reales |
 | 4 | Tablero de seguimiento | Pendiente |
 | 5 | Editor de catálogo y de plantillas | Pendiente |
 | 6 | Generador del informe mensual | Pendiente |
@@ -183,9 +204,11 @@ dependan de ellas.
 
 Dentro de la fase 1: las migraciones, la aplicación Next.js con inicio/cierre de sesión, y los dos
 scripts de catálogo están escritos y probados por separado —`npm run build`, `eslint .` y el
-extractor corrieron limpio contra los PDF reales de agosto (221 elementos, cero duplicados)— pero
-nada de esto se ha ejecutado todavía contra un proyecto de Supabase real: faltan sus credenciales en
-`web/.env.local` para aplicar las migraciones y cargar el catálogo por primera vez.
+extractor corrieron limpio contra los PDF reales de agosto (221 elementos, cero duplicados)—. El
+proyecto de Supabase (`captura-revision-periodica-sci`) ya está enlazado y `web/.env.local` tiene sus
+tres credenciales; una verificación de sólo lectura contra la API confirmó que **el esquema todavía
+no se aplicó** (ninguna de las siete tablas existe todavía). Faltan `npx supabase db push` y
+`cargar_catalogo.py --confirmar` para terminar la fase.
 
 Dentro de la fase 2: `/capturar` (sistemas), `/capturar/[sistema]` (lista con búsqueda y estado) y
 `/capturar/[sistema]/[id]` (formulario generado desde la plantilla, con fotografías, borrador local
@@ -193,6 +216,16 @@ y "guardar y siguiente") compilan y pasan `tsc`/`eslint` limpio — cubre RF-01 
 build no puede probar por sí solo: que la subida directa a Storage y la sesión funcionen de verdad
 desde un teléfono, en la red de la planta, con la señal intermitente que describe RNF-03. Eso exige
 la fase 1 completa (proyecto real) más una prueba de campo.
+
+Dentro de la fase 3: `/recepcion` cubre RF-10 a RF-15 — arrastrar o elegir un lote de fotografías,
+reducirlas igual que en captura directa, la rejilla de pendientes con selección múltiple, asignar a
+sistema, elemento y momento (mueve el objeto en Storage con la operación nativa, no descarga y
+vuelve a subir), descartar sin borrar el objeto, y abrir el formulario del elemento para el texto
+que acompaña. El formulario de `/capturar/[sistema]/[id]` ahora se abre desde los dos caminos: su
+guarda pasó de exigir que el sistema esté en `captura_directa` a exigir sólo que esté en
+`sistemas_activos`, y "guardar y siguiente" distingue el origen para no ofrecer un recorrido
+ordenado que sólo tiene sentido en captura directa. La lógica de asegurar el registro y recalcular
+su estado, antes duplicada, quedó en `lib/registros.ts` porque ambas fases la necesitaban idéntica.
 
 **Ciclo piloto:** agosto 2026. Se libera para los dos sistemas internos —54 botones avisadores y 71
 hidrantes interiores— y da seguimiento a los tres restantes mediante recepción. Los criterios con los
