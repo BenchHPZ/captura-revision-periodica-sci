@@ -150,8 +150,10 @@ tablero, pero conserva lo capturado por si la baja se revierte.
 **Importación masiva**
 
 Para cambios extensos se exporta el catálogo a JSON, se edita fuera y se vuelve a importar. La
-conciliación es por identificador: lo existente se actualiza, lo nuevo se da de alta y lo que ya no
-aparece se marca inactivo. Ningún caso borra evidencia.
+conciliación es por identificador dentro de cada sistema —el mismo identificador puede repetirse
+entre sistemas distintos sin ambigüedad, ver docs/modelo-de-datos.md §2.4—: lo existente se
+actualiza, lo nuevo se da de alta y lo que ya no aparece se marca inactivo. Ningún caso borra
+evidencia.
 
 ---
 

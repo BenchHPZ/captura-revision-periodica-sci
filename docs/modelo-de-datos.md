@@ -112,13 +112,20 @@ Define **qué se revisa**. Es el catálogo del ciclo.
 | `activo` | boolean | no | Falso retira el elemento del ciclo sin borrar lo capturado |
 | `notas` | text | sí | Observaciones del catálogo, no de la revisión |
 
-Restricción: `codigo` único por `(ciclo_id, codigo)`.
+Restricción: `codigo` único por `(ciclo_id, sistema_id, codigo)` — dentro de su sistema, no en todo
+el ciclo.
 
 > **Por qué el identificador va separado del rótulo.** En los datos actuales el número rotulado no
 > identifica al elemento: el RAG 2.4 repite `ELEM. 101` en las zonas 1, 2 y 3, y en las carpetas de
 > marzo eso se resolvió agregando el nombre de quien revisó (`101 - Andres`, `101 - Jesus`,
 > `101 - Julio`), lo que ata la identidad del activo a quién lo atendió ese mes. Con `codigo` propio
 > el número deja de ser la llave y el rótulo puede repetirse sin ambigüedad.
+>
+> **Por qué la unicidad se limita al sistema.** Los formatos RAG reutilizan la misma nomenclatura
+> para cosas distintas: `HC1-1` nombra un hidrante exterior en el RAG 2.2 y, por separado, la
+> válvula de cierre de ese mismo hidrante en el RAG 2.8. Son dos elementos físicos distintos que
+> coinciden en el nombre por convención de la propia instrucción, no un error de captura. Exigir
+> unicidad en todo el ciclo rechazaría el segundo como duplicado del primero.
 
 ### 2.5 `registros`
 
@@ -269,8 +276,8 @@ Lo que se importa y exporta desde la pantalla de catálogo:
 }
 ```
 
-La importación concilia por `codigo`: lo que existe se actualiza, lo que no existe se da de alta, y
-lo que ya no aparece en el archivo se marca `activo = false` en lugar de borrarse.
+La importación concilia por `(sistema, codigo)`: lo que existe se actualiza, lo que no existe se da
+de alta, y lo que ya no aparece en el archivo se marca `activo = false` en lugar de borrarse.
 
 ---
 
@@ -301,8 +308,10 @@ verdad— pero la aplicación lo advierte antes de guardar el cambio de plantill
 
 ## 5. Almacenamiento de archivos
 
-Depósito privado `evidencias`. Ningún objeto es público; el acceso se resuelve con URL firmada de
-vigencia corta.
+Depósito privado `evidencias`. Ningún objeto es público: sólo se lee o se escribe con una sesión
+autenticada, exigida por las políticas de `0004_storage.sql`. El navegador sube cada fotografía
+directo al depósito con esa sesión, sin pasar por el servidor de la aplicación (ver
+docs/decisiones.md D-06).
 
 | Contenido | Ruta |
 |---|---|
@@ -327,7 +336,7 @@ Volumen estimado: 221 elementos × 2 fotografías × 1 MB ≈ 440 MB por ciclo.
 | Único parcial sobre `ciclos.estado` | sólo un `abierto` | Evita ambigüedad sobre el ciclo vigente |
 | `sistemas.clave` | único | Referencia estable desde configuración y plantillas |
 | `plantillas (ciclo_id, sistema_id)` | único | Una plantilla por sistema y ciclo |
-| `elementos (ciclo_id, codigo)` | único | Identificador único dentro del ciclo |
+| `elementos (ciclo_id, sistema_id, codigo)` | único | Identificador único dentro de su sistema |
 | `elementos (ciclo_id, sistema_id, orden)` | índice | Orden de recorrido |
 | `registros.elemento_id` | único | Un registro por elemento |
 | `registros (estado)` | índice | Consultas del tablero |

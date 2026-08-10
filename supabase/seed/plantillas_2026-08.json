@@ -1,0 +1,233 @@
+{
+  "ciclo": "2026-08",
+  "plantillas": {
+    "botones_avisadores": {
+      "fotos": [
+        {
+          "id": "antes",
+          "etiqueta": "Antes",
+          "requerido": true,
+          "min": 1
+        },
+        {
+          "id": "despues",
+          "etiqueta": "Después",
+          "requerido": true,
+          "min": 1
+        }
+      ],
+      "puntos": [
+        {
+          "id": "buen_estado",
+          "etiqueta": "Buen estado",
+          "tipo": "si_no",
+          "requerido": true
+        },
+        {
+          "id": "observaciones",
+          "etiqueta": "Observaciones",
+          "tipo": "texto",
+          "requerido": false
+        }
+      ],
+      "texto_libre": [
+        "como_se_encontro",
+        "que_se_realizo",
+        "pendientes"
+      ]
+    },
+    "hidrantes_interiores": {
+      "fotos": [
+        {
+          "id": "antes",
+          "etiqueta": "Antes",
+          "requerido": true,
+          "min": 1
+        },
+        {
+          "id": "despues",
+          "etiqueta": "Después",
+          "requerido": true,
+          "min": 1
+        }
+      ],
+      "puntos": [
+        {
+          "id": "valvula_aerea_abierta",
+          "etiqueta": "Válvula aérea abierta",
+          "tipo": "si_no",
+          "requerido": true
+        },
+        {
+          "id": "gabinete_buen_estado",
+          "etiqueta": "Gabinete en buen estado",
+          "tipo": "si_no",
+          "requerido": true
+        },
+        {
+          "id": "manguera_piton",
+          "etiqueta": "Manguera y pitón en buen estado",
+          "tipo": "si_no",
+          "requerido": true
+        },
+        {
+          "id": "pintura",
+          "etiqueta": "Pintura",
+          "tipo": "si_no",
+          "requerido": true
+        },
+        {
+          "id": "observaciones",
+          "etiqueta": "Observaciones",
+          "tipo": "texto",
+          "requerido": false
+        }
+      ],
+      "texto_libre": [
+        "como_se_encontro",
+        "que_se_realizo",
+        "pendientes"
+      ]
+    },
+    "hidrantes_exteriores": {
+      "fotos": [
+        {
+          "id": "antes",
+          "etiqueta": "Antes",
+          "requerido": true,
+          "min": 1
+        },
+        {
+          "id": "despues",
+          "etiqueta": "Después",
+          "requerido": true,
+          "min": 1
+        }
+      ],
+      "puntos": [
+        {
+          "id": "valvula_abierta",
+          "etiqueta": "Válvula abierta",
+          "tipo": "si_no",
+          "requerido": true
+        },
+        {
+          "id": "caseta_buen_estado",
+          "etiqueta": "Caseta en buen estado",
+          "tipo": "si_no",
+          "requerido": true
+        },
+        {
+          "id": "pintura_buen_estado",
+          "etiqueta": "Pintura en buen estado",
+          "tipo": "si_no",
+          "requerido": true
+        },
+        {
+          "id": "mangueras_buen_estado",
+          "etiqueta": "Mangueras en buen estado",
+          "tipo": "si_no",
+          "requerido": true
+        },
+        {
+          "id": "piton_buen_estado",
+          "etiqueta": "Pitón en buen estado",
+          "tipo": "si_no",
+          "requerido": true
+        },
+        {
+          "id": "observaciones",
+          "etiqueta": "Observaciones",
+          "tipo": "texto",
+          "requerido": false
+        }
+      ],
+      "texto_libre": [
+        "como_se_encontro",
+        "que_se_realizo",
+        "pendientes"
+      ]
+    },
+    "valvulas_aereas": {
+      "fotos": [
+        {
+          "id": "estado",
+          "etiqueta": "Estado actual",
+          "requerido": true,
+          "min": 1
+        }
+      ],
+      "puntos": [
+        {
+          "id": "valvula_abierta",
+          "etiqueta": "Válvula abierta",
+          "tipo": "si_no",
+          "requerido": true
+        },
+        {
+          "id": "candado_cadena",
+          "etiqueta": "Candado y cadena",
+          "tipo": "si_no",
+          "requerido": true
+        },
+        {
+          "id": "buen_estado",
+          "etiqueta": "En buen estado",
+          "tipo": "si_no",
+          "requerido": true
+        },
+        {
+          "id": "observaciones",
+          "etiqueta": "Observaciones",
+          "tipo": "texto",
+          "requerido": false
+        }
+      ],
+      "texto_libre": [
+        "como_se_encontro",
+        "pendientes"
+      ]
+    },
+    "valvulas_subterraneas": {
+      "fotos": [
+        {
+          "id": "antes",
+          "etiqueta": "Antes",
+          "requerido": true,
+          "min": 1
+        },
+        {
+          "id": "despues",
+          "etiqueta": "Después",
+          "requerido": true,
+          "min": 1
+        }
+      ],
+      "puntos": [
+        {
+          "id": "valvula_abierta",
+          "etiqueta": "Válvula abierta",
+          "tipo": "si_no",
+          "requerido": true
+        },
+        {
+          "id": "valvula_buen_estado",
+          "etiqueta": "Válvula en buen estado",
+          "tipo": "si_no",
+          "requerido": true
+        },
+        {
+          "id": "observaciones",
+          "etiqueta": "Observaciones",
+          "tipo": "texto",
+          "requerido": false
+        }
+      ],
+      "texto_libre": [
+        "como_se_encontro",
+        "que_se_realizo",
+        "pendientes"
+      ]
+    }
+  }
+}

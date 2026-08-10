@@ -115,19 +115,31 @@ alojamiento sin servidor: el sistema de archivos es efímero y cada invocación 
 
 ---
 
-## D-06 · Las fotografías suben directo al depósito
+## D-06 · Las fotografías suben directo al depósito, con la sesión del usuario
 
-**Estado:** vigente
+**Estado:** vigente (revisada en la fase 2)
 
 **Contexto.** El alojamiento de la aplicación limita el tamaño del cuerpo de las peticiones a unos
-pocos megabytes. Una tanda de fotografías de teléfono lo excede con facilidad.
+pocos megabytes. Una tanda de fotografías de teléfono lo excede con facilidad. Además, la captura
+ocurre parado frente al elemento con la señal de teléfono que haya dentro de la nave (RNF-03), así
+que cada vuelta cliente-servidor de más se siente.
 
-**Decisión.** El navegador sube cada fotografía directamente al depósito de archivos usando una
-autorización temporal, y sólo informa a la aplicación de la ruta resultante.
+**Decisión.** El navegador sube cada fotografía directamente al depósito de archivos con la sesión
+ya autenticada del usuario, y sólo informa a la aplicación la ruta resultante para registrarla en
+`fotos`. Al diseñar esto se consideró emitir una URL firmada de un solo uso por fotografía (una
+autorización temporal de corta vigencia, generada por el servidor antes de cada subida) en vez de
+subir directo; se descartó porque exige una vuelta extra al servidor *antes* de cada fotografía —
+justo el costo que D-06 busca evitar— sin una ganancia real de seguridad mientras opera un solo
+usuario autenticado (D-09): las políticas de Storage de `0004_storage.sql` ya exigen sesión válida
+para leer o escribir en el depósito.
 
-**Consecuencias.** La lógica de subida es algo más elaborada en el navegador y hay que emitir y
-vigilar esas autorizaciones. A cambio, no hay límite práctico de tamaño, la carga desde teléfono es
-notablemente más rápida y el servidor no gasta recursos moviendo archivos.
+**Consecuencias.** No hay límite práctico de tamaño, la carga desde teléfono es más rápida (una sola
+vuelta por fotografía) y el servidor de la aplicación no gasta recursos moviendo archivos. El costo:
+cualquier sesión autenticada puede escribir en cualquier ruta del depósito, no sólo en la del
+elemento que tiene abierto — aceptable con un solo usuario, pero **al dar de alta a más
+especialistas (D-09) hay que revisar las políticas de Storage** para restringir la escritura por
+prefijo de ruta (`storage.foldername(name)`), de modo que cada quien sólo pueda escribir dentro de
+su propio ciclo/sistema.
 
 ---
 

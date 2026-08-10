@@ -61,17 +61,21 @@ resultado. El porqué de cada pieza está en [`docs/decisiones.md`](docs/decisio
 ```
 captura-sci/
 ├── README.md
-├── docs/                    documentación del proyecto
+├── docs/                        documentación del proyecto
 │   ├── requerimientos.md
 │   ├── modelo-de-datos.md
 │   ├── flujos-de-usuario.md
 │   └── decisiones.md
-├── web/                     aplicación Next.js
-├── supabase/                migraciones y carga inicial
-│   └── migrations/
-└── scripts/                 utilerías en Python
-    ├── extraer_rags.py      genera el catálogo inicial desde los formatos RAG
-    └── generar_reporte.py   arma el informe mensual
+├── web/                         aplicación Next.js
+│   ├── app/                     rutas: (app) exige sesión, login/ no
+│   └── lib/supabase/            clientes de navegador, servidor y proxy
+├── supabase/
+│   ├── migrations/              0001 esquema · 0002 sistemas fijos · 0003 RLS · 0004 Storage
+│   └── seed/                    catálogo y plantillas ya extraídos, por ciclo
+└── scripts/                     utilerías en Python (requirements.txt)
+    ├── extraer_rags.py          RAG en PDF → supabase/seed/{catalogo,plantillas}_<ciclo>.json
+    ├── cargar_catalogo.py       ese JSON → Supabase (valida en seco sin --confirmar)
+    └── generar_reporte.py       Supabase → informe mensual en PowerPoint (fase 6, aún no escrito)
 ```
 
 El repositorio vive **fuera** de la carpeta sincronizada de Google Drive. En la carpeta de trabajo se
@@ -98,7 +102,8 @@ Quien se incorpore al proyecto debería leer, en orden: requerimientos, flujos y
 | Cuenta de Supabase | Plan gratuito |
 | Cuenta de Vercel | Plan gratuito |
 
-Dependencias de Python para las utilerías: `pypdf`, `Pillow`, `python-pptx`, `supabase`.
+Dependencias de Python para las utilerías, fijadas en [`scripts/requirements.txt`](scripts/requirements.txt):
+`pypdf`, `Pillow`, `python-pptx`, `supabase`, `python-dotenv`.
 
 ## Arranque local
 
@@ -107,20 +112,32 @@ Dependencias de Python para las utilerías: `pypdf`, `Pillow`, `python-pptx`, `s
 cd web
 npm install
 
-# 2. Variables de entorno
+# 2. Variables de entorno (las usan tanto la app como las utilerías de Python)
 cp .env.example .env.local
-#    y capturar los valores del proyecto de Supabase
+#    y capturar los valores del proyecto de Supabase: URL, llave pública
+#    y llave de servicio (Project Settings → API)
+cd ..
 
-# 3. Base de datos
-npx supabase link --project-ref <referencia-del-proyecto>
-npx supabase db push
-npx supabase db seed
+# 3. Dependencias de Python
+python -m pip install -r scripts/requirements.txt
 
-# 4. Servidor de desarrollo
-npm run dev
+# 4. Base de datos: aplicar el esquema
+npx --prefix web supabase link --project-ref <referencia-del-proyecto>
+npx --prefix web supabase db push
+
+# 5. Catálogo del ciclo: extraer de los RAG y cargar a Supabase
+python scripts/extraer_rags.py --formatos "<ruta a Formatos de soporte>" --ciclo 2026-08
+python scripts/cargar_catalogo.py --ciclo 2026-08        # valida y resume; nada se escribe todavía
+python scripts/cargar_catalogo.py --ciclo 2026-08 --confirmar
+
+# 6. Servidor de desarrollo
+cd web && npm run dev
 ```
 
-La aplicación queda en `http://localhost:3000`.
+La aplicación queda en `http://localhost:3000`. La extracción es una propuesta, no la versión
+final —el script señala en pantalla y en el campo `notas` de cada elemento los renglones ambiguos
+de los RAG de origen (duplicados, huecos en la numeración)— así que conviene revisar su salida
+antes de correr `cargar_catalogo.py --confirmar`.
 
 ## Variables de entorno
 
@@ -137,12 +154,13 @@ archivo `.env` que no se versiona.
 
 | Comando | Qué hace |
 |---|---|
-| `npm run dev` | Servidor de desarrollo |
+| `npm run dev` | Servidor de desarrollo (dentro de `web/`) |
 | `npm run build` | Compilación de producción |
-| `npm run lint` | Revisión de estilo |
-| `npx supabase db push` | Aplica las migraciones pendientes |
-| `python scripts/extraer_rags.py` | Genera el catálogo inicial desde los formatos RAG en PDF |
-| `python scripts/generar_reporte.py --ciclo 2026-08` | Arma el informe mensual en PowerPoint |
+| `npm run lint` | Revisión de estilo (`eslint .`; `next lint` ya no existe desde Next 16) |
+| `npx supabase db push` | Aplica las migraciones pendientes (dentro de `web/`, con el proyecto enlazado) |
+| `python scripts/extraer_rags.py --formatos <carpeta> --ciclo <AAAA-MM>` | RAG en PDF → catálogo y plantillas en JSON |
+| `python scripts/cargar_catalogo.py --ciclo <AAAA-MM> [--confirmar]` | Ese JSON → Supabase. Sin `--confirmar` sólo valida |
+| `python scripts/generar_reporte.py --ciclo 2026-08` | Arma el informe mensual en PowerPoint (fase 6, aún no escrito) |
 
 ## Despliegue
 
@@ -155,13 +173,26 @@ dependan de ellas.
 | Fase | Entregable | Estado |
 |---|---|---|
 | 0 | Documentación y estructura del repositorio | Terminada |
-| 1 | Base de datos, seguridad, sesión y carga inicial del catálogo | Pendiente |
-| 2 | Captura desde teléfono con formulario configurable | Pendiente |
+| 1 | Base de datos, seguridad, sesión y carga inicial del catálogo | Código listo; falta ejecutarlo contra un proyecto de Supabase real |
+| 2 | Captura desde teléfono con formulario configurable | Código listo; falta probarlo en un teléfono real |
 | 3 | Recepción y clasificación de evidencia externa | Pendiente |
 | 4 | Tablero de seguimiento | Pendiente |
 | 5 | Editor de catálogo y de plantillas | Pendiente |
 | 6 | Generador del informe mensual | Pendiente |
 | 7 | Archivado del ciclo y liberación del depósito | Pendiente |
+
+Dentro de la fase 1: las migraciones, la aplicación Next.js con inicio/cierre de sesión, y los dos
+scripts de catálogo están escritos y probados por separado —`npm run build`, `eslint .` y el
+extractor corrieron limpio contra los PDF reales de agosto (221 elementos, cero duplicados)— pero
+nada de esto se ha ejecutado todavía contra un proyecto de Supabase real: faltan sus credenciales en
+`web/.env.local` para aplicar las migraciones y cargar el catálogo por primera vez.
+
+Dentro de la fase 2: `/capturar` (sistemas), `/capturar/[sistema]` (lista con búsqueda y estado) y
+`/capturar/[sistema]/[id]` (formulario generado desde la plantilla, con fotografías, borrador local
+y "guardar y siguiente") compilan y pasan `tsc`/`eslint` limpio — cubre RF-01 a RF-09. Lo que el
+build no puede probar por sí solo: que la subida directa a Storage y la sesión funcionen de verdad
+desde un teléfono, en la red de la planta, con la señal intermitente que describe RNF-03. Eso exige
+la fase 1 completa (proyecto real) más una prueba de campo.
 
 **Ciclo piloto:** agosto 2026. Se libera para los dos sistemas internos —54 botones avisadores y 71
 hidrantes interiores— y da seguimiento a los tres restantes mediante recepción. Los criterios con los

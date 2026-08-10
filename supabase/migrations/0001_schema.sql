@@ -85,7 +85,13 @@ create table elementos (
   orden        integer not null default 0,
   activo       boolean not null default true,
   notas        text,
-  unique (ciclo_id, codigo)
+  -- El código es único dentro de su sistema, no en todo el ciclo: los RAG
+  -- de origen reutilizan la misma nomenclatura para cosas distintas entre
+  -- formatos. 'HC1-1' nombra un hidrante exterior en el RAG 2.2 y, por
+  -- separado, la válvula de cierre de ese hidrante en el RAG 2.8 — son dos
+  -- elementos físicos distintos que coinciden en el nombre por convención,
+  -- igual que ELEM. 101 se repite entre zonas de avisadores.
+  unique (ciclo_id, sistema_id, codigo)
 );
 
 create index ix_elementos_recorrido
