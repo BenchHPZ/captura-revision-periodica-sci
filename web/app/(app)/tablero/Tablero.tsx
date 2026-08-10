@@ -135,6 +135,8 @@ export function Tablero({
       f.actualizado ? f.actualizado.slice(0, 10) : "",
     ]);
     const csv = [encabezado, ...renglones].map((fila) => fila.map(celdaCsv).join(",")).join("\r\n");
+    // El BOM al frente le indica a Excel que el archivo es UTF-8; sin él,
+    // los acentos de "Válvulas", "Benjamín", etc. se ven mal en Windows.
     descargar(`tablero_${ciclo.clave}.csv`, `﻿${csv}`, "text/csv;charset=utf-8");
   }
 

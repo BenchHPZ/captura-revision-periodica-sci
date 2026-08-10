@@ -80,7 +80,8 @@ captura-sci/
 │   │       ├── page.tsx              inicio: enlaces a Capturar y Recepción
 │   │       ├── capturar/             Fase 2 — sistemas, lista por sistema, formulario
 │   │       │   └── [sistema]/[id]/   Formulario.tsx (cliente) + actions.ts (servidor)
-│   │       └── recepcion/            Fase 3 — Recepcion.tsx (cliente) + actions.ts (servidor)
+│   │       ├── recepcion/            Fase 3 — Recepcion.tsx (cliente) + actions.ts (servidor)
+│   │       └── tablero/              Fase 4 — Tablero.tsx: avance, ritmo, tabla y exportación
 │   ├── components/EstadoBadge.tsx
 │   └── lib/
 │       ├── supabase/                 clientes de navegador, servidor y proxy
@@ -197,7 +198,7 @@ dependan de ellas.
 | 1 | Base de datos, seguridad, sesión y carga inicial del catálogo | Proyecto enlazado y credenciales en `web/.env.local`; falta aplicar el esquema |
 | 2 | Captura desde teléfono con formulario configurable | Código listo; falta probarlo en un teléfono real |
 | 3 | Recepción y clasificación de evidencia externa | Código listo; falta probarlo con fotos reales |
-| 4 | Tablero de seguimiento | Pendiente |
+| 4 | Tablero de seguimiento | Código listo; falta probarlo con datos reales |
 | 5 | Editor de catálogo y de plantillas | Pendiente |
 | 6 | Generador del informe mensual | Pendiente |
 | 7 | Archivado del ciclo y liberación del depósito | Pendiente |
@@ -226,6 +227,18 @@ guarda pasó de exigir que el sistema esté en `captura_directa` a exigir sólo 
 `sistemas_activos`, y "guardar y siguiente" distingue el origen para no ofrecer un recorrido
 ordenado que sólo tiene sentido en captura directa. La lógica de asegurar el registro y recalcular
 su estado, antes duplicada, quedó en `lib/registros.ts` porque ambas fases la necesitaban idéntica.
+
+Dentro de la fase 4: `/tablero` cubre RF-16 a RF-20 con los datos ya cargados en Supabase, sin
+tocar ninguna tabla nueva. "Mi captura" muestra total, completados, pendientes y porcentaje de
+avance por sistema de captura directa, con acceso directo al siguiente elemento pendiente, y un
+ritmo necesario (pendientes entre días hasta `config.fechas.ejecucion_fin`) que se agregó al valor
+por defecto del ciclo porque el modelo de datos ya lo documentaba pero `cargar_catalogo.py` nunca lo
+escribía. "Recepción" muestra avance por responsable —completados, pendientes, días sin reportar
+evidencia— y cuántas fotografías siguen sin clasificar en `/recepcion`. Debajo, una tabla con los
+221 elementos filtrable por sistema, responsable y estado, con fotografías por momento, quién
+capturó y cuándo; cualquier renglón abre el elemento en `/capturar`. Exporta la tabla ya filtrada a
+CSV (con BOM, para que Excel no maltrate los acentos) y los 221 resultados completos a JSON, ambos
+generados en el navegador a partir de lo que ya se cargó para pintar la pantalla.
 
 **Ciclo piloto:** agosto 2026. Se libera para los dos sistemas internos —54 botones avisadores y 71
 hidrantes interiores— y da seguimiento a los tres restantes mediante recepción. Los criterios con los
