@@ -81,7 +81,9 @@ captura-sci/
 │   │       ├── capturar/             Fase 2 — sistemas, lista por sistema, formulario
 │   │       │   └── [sistema]/[id]/   Formulario.tsx (cliente) + actions.ts (servidor)
 │   │       ├── recepcion/            Fase 3 — Recepcion.tsx (cliente) + actions.ts (servidor)
-│   │       └── tablero/              Fase 4 — Tablero.tsx: avance, ritmo, tabla y exportación
+│   │       ├── tablero/              Fase 4 — Tablero.tsx: avance, ritmo, tabla y exportación
+│   │       └── catalogo/             Fase 5 — sistemas, importar/exportar catálogo
+│   │           └── [sistema]/        PlantillaEditor.tsx + ElementosCatalogo.tsx (cliente)
 │   ├── components/EstadoBadge.tsx
 │   └── lib/
 │       ├── supabase/                 clientes de navegador, servidor y proxy
@@ -90,6 +92,7 @@ captura-sci/
 │       ├── datos.ts                  consultas de servidor ("server-only")
 │       ├── registros.ts              aseguraRegistro/recalcularYGuardarEstado, compartido
 │       ├── imagen.ts                 reducción a 2560px/calidad 88 con orientación EXIF
+│       ├── descargas.ts              descargar() — genera y dispara un archivo en el navegador
 │       └── rutas.ts, texto.ts        rutas de Storage; búsqueda sin acentos
 ├── supabase/
 │   ├── migrations/                   0001 esquema · 0002 sistemas fijos · 0003 RLS · 0004 Storage
@@ -199,7 +202,7 @@ dependan de ellas.
 | 2 | Captura desde teléfono con formulario configurable | Código listo; falta probarlo en un teléfono real |
 | 3 | Recepción y clasificación de evidencia externa | Código listo; falta probarlo con fotos reales |
 | 4 | Tablero de seguimiento | Código listo; falta probarlo con datos reales |
-| 5 | Editor de catálogo y de plantillas | Pendiente |
+| 5 | Editor de catálogo y de plantillas | Código listo; falta probarlo con datos reales |
 | 6 | Generador del informe mensual | Pendiente |
 | 7 | Archivado del ciclo y liberación del depósito | Pendiente |
 
@@ -239,6 +242,22 @@ evidencia— y cuántas fotografías siguen sin clasificar en `/recepcion`. Deba
 capturó y cuándo; cualquier renglón abre el elemento en `/capturar`. Exporta la tabla ya filtrada a
 CSV (con BOM, para que Excel no maltrate los acentos) y los 221 resultados completos a JSON, ambos
 generados en el navegador a partir de lo que ya se cargó para pintar la pantalla.
+
+Dentro de la fase 5: `/catalogo` cubre RF-21 a RF-26. Por sistema, `PlantillaEditor` edita bloques
+de fotos, puntos de revisión (con su tipo, obligatoriedad y opciones si son de selección) y los
+textos de descripción habilitados; reordenar es con flechas, no arrastrar. El identificador de un
+punto o bloque ya existente no se puede editar —lo demás sí— porque es la llave que ata las
+respuestas ya capturadas (`registros.valores`) y las fotografías (`fotos.momento`) a ese punto;
+tocarlo las dejaría huérfanas. Guardar siempre pasa primero por una vista previa que recalcula el
+estado de cada elemento activo del sistema contra la plantilla nueva y dice cuántos cambiarían —RF-26—
+antes de escribir nada. `ElementosCatalogo` da de alta, edita y da de baja elementos sin salir de la
+pantalla; si la edición cambia el código, mueve cada fotografía ya subida a la ruta con el código
+nuevo antes de guardar el cambio, así que ninguna fotografía se pierde ni hay que volver a subirla.
+Dar de baja nunca borra: el elemento sale de las listas de captura pero se puede reactivar. Desde
+`/catalogo` se exporta el catálogo completo y las plantillas completas a JSON, y se importa un
+catálogo editado fuera —con una vista previa de altas, actualizaciones y bajas por sistema antes de
+confirmar, igual que el cambio de plantilla—; la conciliación sólo toca los sistemas presentes en el
+archivo (ver D-14).
 
 **Ciclo piloto:** agosto 2026. Se libera para los dos sistemas internos —54 botones avisadores y 71
 hidrantes interiores— y da seguimiento a los tres restantes mediante recepción. Los criterios con los

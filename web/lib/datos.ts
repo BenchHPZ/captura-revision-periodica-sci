@@ -4,6 +4,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { DatosRegistro } from "./estado";
 import { DEPOSITO } from "./rutas";
 import type { Ciclo, Elemento, Entrada, Estado, Foto, Plantilla, Registro, Sistema } from "./tipos";
 
@@ -72,6 +73,26 @@ export function contarPorEstado(elementos: ElementoConEstado[]): ConteoPorEstado
   return conteo;
 }
 
+/** Para el catálogo (Flujo 5): trae activos e inactivos — a diferencia de
+ * obtenerElementos, que sólo trae los activos porque alimenta las
+ * pantallas de captura. */
+export async function obtenerElementosCatalogo(
+  supabase: SupabaseClient,
+  cicloId: string,
+  sistemaId: string,
+): Promise<Elemento[]> {
+  const { data, error } = await supabase
+    .from("elementos")
+    .select(
+      "id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas",
+    )
+    .eq("ciclo_id", cicloId)
+    .eq("sistema_id", sistemaId)
+    .order("orden");
+  if (error) throw error;
+  return (data ?? []) as Elemento[];
+}
+
 export interface ElementoTablero extends Elemento {
   registro: { id: string; estado: Estado; capturado_por: string | null; actualizado: string } | null;
   fotosPorMomento: Record<string, number>;
@@ -112,6 +133,55 @@ export async function obtenerElementosTablero(
       : null;
 
     return { ...fila, registro, fotosPorMomento } as ElementoTablero;
+  });
+}
+
+export interface ElementoParaImpacto {
+  id: string;
+  registroId: string | null;
+  estadoActual: Estado;
+  registro: DatosRegistro | null;
+  fotosPorMomento: Record<string, number>;
+}
+
+/** Para la vista previa de impacto al cambiar una plantilla (Flujo 6,
+ * RF-26): trae de cada elemento activo del sistema lo que calcularEstado()
+ * necesita para recalcular contra la plantilla nueva, sin escribir nada. */
+export async function obtenerElementosParaImpacto(
+  supabase: SupabaseClient,
+  cicloId: string,
+  sistemaId: string,
+): Promise<ElementoParaImpacto[]> {
+  const { data, error } = await supabase
+    .from("elementos")
+    .select(
+      "id, registro:registros(id, estado, como_se_encontro, que_se_realizo, pendientes, valores, fotos(momento))",
+    )
+    .eq("ciclo_id", cicloId)
+    .eq("sistema_id", sistemaId)
+    .eq("activo", true);
+  if (error) throw error;
+
+  return (data ?? []).map((fila) => {
+    const crudo = Array.isArray(fila.registro) ? (fila.registro[0] ?? null) : fila.registro;
+    const fotos: { momento: string }[] = crudo?.fotos ?? [];
+    const fotosPorMomento: Record<string, number> = {};
+    for (const f of fotos) fotosPorMomento[f.momento] = (fotosPorMomento[f.momento] ?? 0) + 1;
+
+    return {
+      id: fila.id as string,
+      registroId: (crudo?.id as string | undefined) ?? null,
+      estadoActual: (crudo?.estado as Estado | undefined) ?? "sin_iniciar",
+      registro: crudo
+        ? {
+            como_se_encontro: crudo.como_se_encontro as string | null,
+            que_se_realizo: crudo.que_se_realizo as string | null,
+            pendientes: crudo.pendientes as string | null,
+            valores: (crudo.valores as Record<string, string> | null) ?? {},
+          }
+        : null,
+      fotosPorMomento,
+    };
   });
 }
 

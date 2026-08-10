@@ -284,3 +284,33 @@ ajustar a mano fue la conciliación de la importación masiva (Flujo 5), que aho
 duplicados y correrlo contra los PDF reales antes de cargar nada — ver
 docs/flujos-de-usuario.md Flujo 1 y `scripts/extraer_rags.py`. Queda como recordatorio de que el
 catálogo real es la prueba de fondo para el modelo de datos, no al revés.
+
+---
+
+## D-14 · La importación del catálogo sólo concilia los sistemas presentes en el archivo
+
+**Estado:** vigente
+
+**Contexto.** Flujo 5 describe la importación masiva como un ciclo completo: exportar el catálogo,
+editarlo fuera y volver a importarlo. Pero nada obliga a que el archivo que se importa sea siempre
+ese ciclo completo — alguien puede exportar, recortar el archivo a un solo sistema para revisarlo
+con más calma y volver a importar sólo eso. Si la conciliación comparara contra el catálogo entero
+del ciclo, cualquier sistema ausente del archivo se leería como "ya no aparece" y se daría de baja
+completo sin que nadie lo pidiera.
+
+**Decisión.** La importación agrupa los elementos del archivo por el campo `sistema` y concilia cada
+grupo únicamente contra los elementos existentes de ese mismo sistema. Un sistema que no aparece en
+el archivo queda intacto, no se toca. Dentro de un sistema que sí está presente en el archivo, la
+regla de Flujo 5 se aplica completa: lo que existe se actualiza, lo nuevo se da de alta y lo que ya
+no aparece se marca inactivo.
+
+**Consecuencias.** Un archivo parcial es seguro de importar — no puede dar de baja por accidente
+sistemas que no tocó. El costo es que un archivo que de verdad pretendía vaciar un sistema completo
+(dejarlo sin ningún elemento) tiene que decirlo explícitamente incluyendo ese sistema con una lista
+vacía... lo cual en la práctica nunca aplica: ver un sistema entero desaparecer del catálogo no es un
+caso de uso real de esta pantalla, sólo un riesgo a evitar.
+
+**Cómo se detectó.** Al diseñar la fase 5, antes de escribir código: revisar Flujo 5 contra un caso
+concreto —exportar 221 elementos, editar sólo botones avisadores, reimportar— bastó para ver que una
+conciliación global habría desactivado hidrantes interiores, exteriores y ambas redes de válvulas sin
+que el archivo dijera nada sobre ellos.

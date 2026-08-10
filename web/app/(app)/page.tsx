@@ -46,9 +46,15 @@ export default async function InicioPage() {
         </p>
       </Link>
 
-      <div className="border border-vw-dsb-20 bg-vw-vg-10 p-4 text-sm text-vw-deep-space">
-        El catálogo se construye en la siguiente fase.
-      </div>
+      <Link
+        href="/catalogo"
+        className="block border border-vw-dsb-20 p-4 transition hover:border-vw-vivid-green"
+      >
+        <span className="font-medium text-vw-deep-space">Catálogo</span>
+        <p className="mt-1 text-sm text-vw-dsb-60">
+          Elementos y plantillas del ciclo, importar y exportar en JSON.
+        </p>
+      </Link>
     </div>
   );
 }

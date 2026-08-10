@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { EstadoBadge, etiquetaEstado } from "@/components/EstadoBadge";
+import { descargar } from "@/lib/descargas";
 import type { Estado } from "@/lib/tipos";
 
 interface SistemaCaptura {
@@ -67,16 +68,6 @@ function formatoFotos(fotosPorMomento: Record<string, number>, momentos: { id: s
 
 function celdaCsv(valor: string) {
   return /[",\r\n]/.test(valor) ? `"${valor.replace(/"/g, '""')}"` : valor;
-}
-
-function descargar(nombre: string, contenido: string, tipo: string) {
-  const blob = new Blob([contenido], { type: tipo });
-  const url = URL.createObjectURL(blob);
-  const enlace = document.createElement("a");
-  enlace.href = url;
-  enlace.download = nombre;
-  enlace.click();
-  URL.revokeObjectURL(url);
 }
 
 export function Tablero({
