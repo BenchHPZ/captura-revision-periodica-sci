@@ -12,6 +12,12 @@ export interface DatosElemento {
   nombre: string;
   zona: string | null;
   ubicacion: string | null;
+  /** ≤5 palabras — se valida en ElementosCatalogo.tsx antes de llegar aquí. */
+  referencia: string | null;
+  /** Agrupador del documento RAG; campo propio del catálogo, no derivado
+   * de zona/ubicacion (ver docs/decisiones.md D-15). */
+  seccion: string | null;
+  orden_seccion: number | null;
   tipo: string | null;
   responsable: string | null;
 }
@@ -39,7 +45,9 @@ export async function crearElemento(cicloId: string, sistemaId: string, datos: D
   const { data, error } = await supabase
     .from("elementos")
     .insert({ ciclo_id: cicloId, sistema_id: sistemaId, ...datos, orden })
-    .select("id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas")
+    .select(
+      "id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion",
+    )
     .single();
   if (error) throw error;
   revalidatePath("/catalogo", "layout");

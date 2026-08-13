@@ -55,6 +55,16 @@ export default async function InicioPage() {
           Elementos y plantillas del ciclo, importar y exportar en JSON.
         </p>
       </Link>
+
+      <Link
+        href="/rag"
+        className="block border border-vw-dsb-20 p-4 transition hover:border-vw-vivid-green"
+      >
+        <span className="font-medium text-vw-deep-space">Formatos RAG</span>
+        <p className="mt-1 text-sm text-vw-dsb-60">
+          Ver, imprimir y descargar los cinco formatos estandarizados, en blanco o con lo capturado.
+        </p>
+      </Link>
     </div>
   );
 }

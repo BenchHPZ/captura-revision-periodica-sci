@@ -1,0 +1,56 @@
+{
+  "_nota": "Propuesta de datos para la tabla 'formatos' (migración 0005_rag.sql), cargable con web/scripts/cargar-formatos.ts o desde el botón 'Cargar formatos' en /rag. Sólo lo PARTICULAR de cada formato va aquí -- clave, nombre, periodicidad, sistema, documento_referencia, revision e instrucciones propias. Lo que debe ser idéntico en los cinco (clasificación, razón social, domicilio, instrucción general, bloque de cierre) vive en código, en web/lib/rag/constantes.ts, precisamente para que no haya manera de que un formato lo traiga distinto (ver docs/decisiones.md D-15 §7.1) -- por eso no se repite aquí.",
+
+  "formatos": [
+    {
+      "clave": "RAG 2.2",
+      "nombre": "Limpieza y revisión de hidrantes exteriores de agua contra incendio",
+      "periodicidad": "mensual",
+      "sistema": "hidrantes_exteriores",
+      "documento_referencia": "I1.15M2_4037-002",
+      "revision": "5",
+      "instrucciones": ["Tipo de hidrante: P = Pie, G = Gabinete."],
+      "notas": null
+    },
+    {
+      "clave": "RAG 2.3",
+      "nombre": "Limpieza, revisión y reparación de hidrantes interiores de agua contra incendio",
+      "periodicidad": "mensual",
+      "sistema": "hidrantes_interiores",
+      "documento_referencia": "I1.15M2_4037-002",
+      "revision": "5",
+      "instrucciones": [],
+      "notas": null
+    },
+    {
+      "clave": "RAG 2.4",
+      "nombre": "Prueba de botones avisadores de incendio",
+      "periodicidad": "mensual",
+      "sistema": "botones_avisadores",
+      "documento_referencia": "I1.15M2_4037-002",
+      "revision": "5",
+      "instrucciones": [],
+      "notas": "El PDF de origen titula este formato 'PRUEBA TRIMESTRAL DE AVISADORES DE INCENDIO', pero botones_avisadores se ejecuta y reporta como parte del ciclo mensual junto con los otros cuatro sistemas (ver docs/requerimientos.md §3). Se deja 'periodicidad: mensual' porque así opera hoy el área; la discrepancia con el título del documento oficial queda señalada aquí, sin resolverla, para que quien mantenga el proceso decida si el documento fuente debe corregirse."
+    },
+    {
+      "clave": "RAG 2.7",
+      "nombre": "Revisión a la red de agua contra incendio aérea",
+      "periodicidad": "mensual",
+      "sistema": "valvulas_aereas",
+      "documento_referencia": "I1.15M2_4037-002",
+      "revision": "5",
+      "instrucciones": [],
+      "notas": "El PDF de origen no trae la marca 'INTERNAL#' que sí llevan los otros cuatro formatos; se aplica aquí para que la clasificación quede uniforme, como pide la estandarización."
+    },
+    {
+      "clave": "RAG 2.8",
+      "nombre": "Limpieza, revisión y reparación de válvulas contra incendio subterráneas",
+      "periodicidad": "mensual",
+      "sistema": "valvulas_subterraneas",
+      "documento_referencia": "I1.15M2_4037-002",
+      "revision": "5",
+      "instrucciones": ["Tipo de válvula: Mariposa (seccionamiento) o Vástago (cierre de hidrante)."],
+      "notas": null
+    }
+  ]
+}

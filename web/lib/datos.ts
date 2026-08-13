@@ -6,7 +6,18 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DatosRegistro } from "./estado";
 import { DEPOSITO } from "./rutas";
-import type { Ciclo, Elemento, Entrada, Estado, Foto, Plantilla, Registro, Sistema } from "./tipos";
+import type {
+  Ciclo,
+  Elemento,
+  Entrada,
+  Estado,
+  Formato,
+  Foto,
+  Plantilla,
+  Registro,
+  Sistema,
+  ValorPunto,
+} from "./tipos";
 
 export { DEPOSITO };
 
@@ -42,7 +53,7 @@ export async function obtenerElementos(
   const { data, error } = await supabase
     .from("elementos")
     .select(
-      "id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, registro:registros(id, estado)",
+      "id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion, registro:registros(id, estado)",
     )
     .eq("ciclo_id", cicloId)
     .eq("sistema_id", sistemaId)
@@ -84,7 +95,7 @@ export async function obtenerElementosCatalogo(
   const { data, error } = await supabase
     .from("elementos")
     .select(
-      "id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas",
+      "id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion",
     )
     .eq("ciclo_id", cicloId)
     .eq("sistema_id", sistemaId)
@@ -109,7 +120,7 @@ export async function obtenerElementosTablero(
   const { data, error } = await supabase
     .from("elementos")
     .select(
-      "id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, registro:registros(id, estado, capturado_por, actualizado, fotos(momento))",
+      "id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion, registro:registros(id, estado, capturado_por, actualizado, fotos(momento))",
     )
     .eq("ciclo_id", cicloId)
     .eq("sistema_id", sistemaId)
@@ -208,7 +219,7 @@ export async function obtenerElemento(
 ): Promise<Elemento | null> {
   const { data, error } = await supabase
     .from("elementos")
-    .select("id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas")
+    .select("id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion")
     .eq("id", elementoId)
     .eq("ciclo_id", cicloId)
     .eq("sistema_id", sistemaId)
@@ -276,4 +287,64 @@ export async function firmarRutas(
     if (fila.signedUrl && fila.path) mapa[fila.path] = fila.signedUrl;
   }
   return mapa;
+}
+
+/** La identidad y la imagen de un RAG. No cuelga de ningún ciclo — ver
+ * docs/modelo-de-datos.md §2.8. */
+export async function obtenerFormatos(supabase: SupabaseClient): Promise<Formato[]> {
+  const { data, error } = await supabase
+    .from("formatos")
+    .select("id, clave, nombre, periodicidad, sistema_id, documento_referencia, revision, instrucciones, notas")
+    .order("clave");
+  if (error) throw error;
+  return (data ?? []) as Formato[];
+}
+
+export async function obtenerFormatoPorClave(supabase: SupabaseClient, clave: string): Promise<Formato | null> {
+  const { data, error } = await supabase
+    .from("formatos")
+    .select("id, clave, nombre, periodicidad, sistema_id, documento_referencia, revision, instrucciones, notas")
+    .eq("clave", clave)
+    .maybeSingle();
+  if (error) throw error;
+  return data as Formato | null;
+}
+
+export interface ElementoParaRagFila {
+  id: string;
+  nombre: string;
+  ubicacion: string | null;
+  referencia: string | null;
+  seccion: string | null;
+  orden_seccion: number | null;
+  orden: number;
+  /** 'pendientes' es lo que alimenta la columna Observaciones del
+   * documento RAG — ver docs/decisiones.md D-15 §7.2. No hay una columna
+   * 'observaciones' aparte. */
+  registro: { valores: Record<string, ValorPunto>; pendientes: string | null } | null;
+}
+
+/** Para armar un DocumentoRAG (Fase 6): trae de cada elemento activo lo
+ * que lib/rag/documento.ts necesita para ubicarlo en su sección y, si lo
+ * hay, lo que ya se capturó para pintarlo en modo "lleno". */
+export async function obtenerElementosParaRag(
+  supabase: SupabaseClient,
+  cicloId: string,
+  sistemaId: string,
+): Promise<ElementoParaRagFila[]> {
+  const { data, error } = await supabase
+    .from("elementos")
+    .select(
+      "id, nombre, ubicacion, referencia, seccion, orden_seccion, orden, registro:registros(valores, pendientes)",
+    )
+    .eq("ciclo_id", cicloId)
+    .eq("sistema_id", sistemaId)
+    .eq("activo", true)
+    .order("orden");
+  if (error) throw error;
+
+  return (data ?? []).map((fila) => ({
+    ...fila,
+    registro: Array.isArray(fila.registro) ? (fila.registro[0] ?? null) : fila.registro,
+  })) as ElementoParaRagFila[];
 }

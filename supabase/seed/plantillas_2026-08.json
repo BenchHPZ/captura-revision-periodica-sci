@@ -22,12 +22,6 @@
           "etiqueta": "Buen estado",
           "tipo": "si_no",
           "requerido": true
-        },
-        {
-          "id": "observaciones",
-          "etiqueta": "Observaciones",
-          "tipo": "texto",
-          "requerido": false
         }
       ],
       "texto_libre": [
@@ -75,12 +69,6 @@
           "etiqueta": "Pintura",
           "tipo": "si_no",
           "requerido": true
-        },
-        {
-          "id": "observaciones",
-          "etiqueta": "Observaciones",
-          "tipo": "texto",
-          "requerido": false
         }
       ],
       "texto_libre": [
@@ -134,12 +122,6 @@
           "etiqueta": "Pitón en buen estado",
           "tipo": "si_no",
           "requerido": true
-        },
-        {
-          "id": "observaciones",
-          "etiqueta": "Observaciones",
-          "tipo": "texto",
-          "requerido": false
         }
       ],
       "texto_libre": [
@@ -175,12 +157,6 @@
           "etiqueta": "En buen estado",
           "tipo": "si_no",
           "requerido": true
-        },
-        {
-          "id": "observaciones",
-          "etiqueta": "Observaciones",
-          "tipo": "texto",
-          "requerido": false
         }
       ],
       "texto_libre": [
@@ -215,12 +191,6 @@
           "etiqueta": "Válvula en buen estado",
           "tipo": "si_no",
           "requerido": true
-        },
-        {
-          "id": "observaciones",
-          "etiqueta": "Observaciones",
-          "tipo": "texto",
-          "requerido": false
         }
       ],
       "texto_libre": [

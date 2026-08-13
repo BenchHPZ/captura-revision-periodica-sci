@@ -16,9 +16,18 @@ const CAMPOS_VACIOS: DatosElemento = {
   nombre: "",
   zona: "",
   ubicacion: "",
+  referencia: "",
+  seccion: "",
+  orden_seccion: null,
   tipo: "",
   responsable: "",
 };
+
+const LIMITE_PALABRAS_REFERENCIA = 5;
+
+function contarPalabras(texto: string): number {
+  return texto.trim() === "" ? 0 : texto.trim().split(/\s+/).length;
+}
 
 export function ElementosCatalogo({ ciclo, sistema, elementosIniciales }: Props) {
   const [elementos, setElementos] = useState<Elemento[]>(elementosIniciales);
@@ -33,7 +42,9 @@ export function ElementosCatalogo({ ciclo, sistema, elementosIniciales }: Props)
     return elementos.filter((e) => {
       if (!mostrarInactivos && !e.activo) return false;
       if (!q) return true;
-      return [e.codigo, e.nombre, e.ubicacion, e.zona].some((campo) => campo && normaliza(campo).includes(q));
+      return [e.codigo, e.nombre, e.ubicacion, e.zona, e.referencia].some(
+        (campo) => campo && normaliza(campo).includes(q),
+      );
     });
   }, [elementos, busqueda, mostrarInactivos]);
 
@@ -139,6 +150,9 @@ export function ElementosCatalogo({ ciclo, sistema, elementosIniciales }: Props)
                     nombre: e.nombre,
                     zona: e.zona ?? "",
                     ubicacion: e.ubicacion ?? "",
+                    referencia: e.referencia ?? "",
+                    seccion: e.seccion ?? "",
+                    orden_seccion: e.orden_seccion,
                     tipo: e.tipo ?? "",
                     responsable: e.responsable ?? "",
                   }}
@@ -153,7 +167,7 @@ export function ElementosCatalogo({ ciclo, sistema, elementosIniciales }: Props)
                     {e.codigo} — {e.nombre}
                   </p>
                   <p className="truncate text-sm text-vw-dsb-60">
-                    {[e.zona, e.ubicacion].filter(Boolean).join(" · ") || "Sin ubicación registrada"}
+                    {[e.zona, e.ubicacion, e.referencia].filter(Boolean).join(" · ") || "Sin ubicación registrada"}
                     {e.responsable && ` · ${e.responsable}`}
                   </p>
                 </button>
@@ -176,6 +190,15 @@ export function ElementosCatalogo({ ciclo, sistema, elementosIniciales }: Props)
   );
 }
 
+/** Igual que DatosElemento, salvo 'orden_seccion': el formulario lo teclea
+ * como texto (como cualquier input) y sólo se convierte a número al
+ * enviar — evitar mezclar number|null con el valor en vivo del campo. */
+type DatosFormulario = Omit<DatosElemento, "orden_seccion"> & { orden_seccion: string };
+
+function aFormulario(datos: DatosElemento): DatosFormulario {
+  return { ...datos, orden_seccion: datos.orden_seccion === null ? "" : String(datos.orden_seccion) };
+}
+
 function FormularioElemento({
   inicial,
   onGuardar,
@@ -185,11 +208,29 @@ function FormularioElemento({
   onGuardar: (datos: DatosElemento) => void | Promise<void>;
   onCancelar: () => void;
 }) {
-  const [datos, setDatos] = useState<DatosElemento>(inicial);
+  const [datos, setDatos] = useState<DatosFormulario>(() => aFormulario(inicial));
   const [enviando, setEnviando] = useState(false);
+  const [errorReferencia, setErrorReferencia] = useState<string | null>(null);
+  const [errorOrdenSeccion, setErrorOrdenSeccion] = useState<string | null>(null);
 
   async function enviar(evento: React.FormEvent) {
     evento.preventDefault();
+
+    const referencia = datos.referencia?.trim() || "";
+    const palabras = contarPalabras(referencia);
+    if (palabras > LIMITE_PALABRAS_REFERENCIA) {
+      setErrorReferencia(`Máximo ${LIMITE_PALABRAS_REFERENCIA} palabras (tiene ${palabras}).`);
+      return;
+    }
+    setErrorReferencia(null);
+
+    const ordenSeccionTexto = datos.orden_seccion.trim();
+    if (ordenSeccionTexto !== "" && Number.isNaN(Number(ordenSeccionTexto))) {
+      setErrorOrdenSeccion("Debe ser un número.");
+      return;
+    }
+    setErrorOrdenSeccion(null);
+
     setEnviando(true);
     try {
       await onGuardar({
@@ -197,6 +238,9 @@ function FormularioElemento({
         nombre: datos.nombre.trim(),
         zona: datos.zona?.trim() || null,
         ubicacion: datos.ubicacion?.trim() || null,
+        referencia: referencia || null,
+        seccion: datos.seccion?.trim() || null,
+        orden_seccion: ordenSeccionTexto === "" ? null : Number(ordenSeccionTexto),
         tipo: datos.tipo?.trim() || null,
         responsable: datos.responsable?.trim() || null,
       });
@@ -225,6 +269,33 @@ function FormularioElemento({
         valor={datos.ubicacion ?? ""}
         onChange={(v) => setDatos((d) => ({ ...d, ubicacion: v }))}
       />
+      <div>
+        <CampoTexto
+          etiqueta={`Referencia (≤${LIMITE_PALABRAS_REFERENCIA} palabras)`}
+          valor={datos.referencia ?? ""}
+          onChange={(v) => {
+            setErrorReferencia(null);
+            setDatos((d) => ({ ...d, referencia: v }));
+          }}
+        />
+        {errorReferencia && <p className="mt-1 text-xs text-vw-red">{errorReferencia}</p>}
+      </div>
+      <CampoTexto
+        etiqueta="Sección del RAG"
+        valor={datos.seccion ?? ""}
+        onChange={(v) => setDatos((d) => ({ ...d, seccion: v }))}
+      />
+      <div>
+        <CampoTexto
+          etiqueta="Orden de la sección"
+          valor={datos.orden_seccion}
+          onChange={(v) => {
+            setErrorOrdenSeccion(null);
+            setDatos((d) => ({ ...d, orden_seccion: v }));
+          }}
+        />
+        {errorOrdenSeccion && <p className="mt-1 text-xs text-vw-red">{errorOrdenSeccion}</p>}
+      </div>
       <CampoTexto etiqueta="Tipo" valor={datos.tipo ?? ""} onChange={(v) => setDatos((d) => ({ ...d, tipo: v }))} />
       <CampoTexto
         etiqueta="Responsable"

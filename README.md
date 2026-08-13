@@ -82,8 +82,10 @@ captura-sci/
 │   │       │   └── [sistema]/[id]/   Formulario.tsx (cliente) + actions.ts (servidor)
 │   │       ├── recepcion/            Fase 3 — Recepcion.tsx (cliente) + actions.ts (servidor)
 │   │       ├── tablero/              Fase 4 — Tablero.tsx: avance, ritmo, tabla y exportación
-│   │       └── catalogo/             Fase 5 — sistemas, importar/exportar catálogo
-│   │           └── [sistema]/        PlantillaEditor.tsx + ElementosCatalogo.tsx (cliente)
+│   │       ├── catalogo/             Fase 5 — sistemas, importar/exportar catálogo
+│   │       │   └── [sistema]/        PlantillaEditor.tsx + ElementosCatalogo.tsx (cliente)
+│   │       └── rag/                  Formatos RAG estandarizados (D-15/D-16) — lista y visor
+│   │           └── [formato]/        VisorRAG.tsx: ver, alternar vacío/lleno, imprimir · FormatoEditor.tsx
 │   ├── components/EstadoBadge.tsx
 │   └── lib/
 │       ├── supabase/                 clientes de navegador, servidor y proxy
@@ -93,10 +95,12 @@ captura-sci/
 │       ├── registros.ts              aseguraRegistro/recalcularYGuardarEstado, compartido
 │       ├── imagen.ts                 reducción a 2560px/calidad 88 con orientación EXIF
 │       ├── descargas.ts              descargar() — genera y dispara un archivo en el navegador
-│       └── rutas.ts, texto.ts        rutas de Storage; búsqueda sin acentos
+│       ├── rutas.ts, texto.ts        rutas de Storage; búsqueda sin acentos
+│       └── rag/                      documento.ts + render.ts + estilos.ts — puros, sin Next/Supabase/React
+│                                      (ver docs/decisiones.md D-16: pensados para una segunda entrada local)
 ├── supabase/
-│   ├── migrations/                   0001 esquema · 0002 sistemas fijos · 0003 RLS · 0004 Storage
-│   └── seed/                         catálogo y plantillas ya extraídos, por ciclo
+│   ├── migrations/                   0001 esquema · 0002 sistemas fijos · 0003 RLS · 0004 Storage · 0005 formatos RAG
+│   └── seed/                         catálogo, plantillas y formatos ya extraídos, por ciclo
 └── scripts/                          utilerías en Python (requirements.txt)
     ├── extraer_rags.py               RAG en PDF → supabase/seed/{catalogo,plantillas}_<ciclo>.json
     ├── cargar_catalogo.py            ese JSON → Supabase (valida en seco sin --confirmar)
@@ -150,12 +154,17 @@ python -m pip install -r scripts/requirements.txt
 npx --prefix web supabase link --project-ref <referencia-del-proyecto>
 npx --prefix web supabase db push
 
-# 5. Catálogo del ciclo: extraer de los RAG y cargar a Supabase
+# 5. Formatos RAG: una sola vez, no depende de ningún ciclo (ver D-15)
+cd web && npx tsx scripts/cargar-formatos.ts                 # valida y resume; nada se escribe todavía
+npx tsx scripts/cargar-formatos.ts --confirmar
+cd ..
+
+# 6. Catálogo del ciclo: extraer de los RAG y cargar a Supabase
 python scripts/extraer_rags.py --formatos "<ruta a Formatos de soporte>" --ciclo 2026-08
 python scripts/cargar_catalogo.py --ciclo 2026-08        # valida y resume; nada se escribe todavía
 python scripts/cargar_catalogo.py --ciclo 2026-08 --confirmar
 
-# 6. Servidor de desarrollo
+# 7. Servidor de desarrollo
 cd web && npm run dev
 ```
 
@@ -183,6 +192,7 @@ archivo `.env` que no se versiona.
 | `npm run build` | Compilación de producción |
 | `npm run lint` | Revisión de estilo (`eslint .`; `next lint` ya no existe desde Next 16) |
 | `npx supabase db push` | Aplica las migraciones pendientes (dentro de `web/`, con el proyecto enlazado) |
+| `npx tsx scripts/cargar-formatos.ts [--confirmar]` | (dentro de `web/`) `formatos_mensuales.json` → Supabase. Una sola vez, no por ciclo. Sin `--confirmar` sólo valida |
 | `python scripts/extraer_rags.py --formatos <carpeta> --ciclo <AAAA-MM>` | RAG en PDF → catálogo y plantillas en JSON |
 | `python scripts/cargar_catalogo.py --ciclo <AAAA-MM> [--confirmar]` | Ese JSON → Supabase. Sin `--confirmar` sólo valida |
 | `python scripts/generar_reporte.py --ciclo 2026-08` | Arma el informe mensual en PowerPoint (fase 6, aún no escrito) |
@@ -258,6 +268,26 @@ Dar de baja nunca borra: el elemento sale de las listas de captura pero se puede
 catálogo editado fuera —con una vista previa de altas, actualizaciones y bajas por sistema antes de
 confirmar, igual que el cambio de plantilla—; la conciliación sólo toca los sistemas presentes en el
 archivo (ver D-14).
+
+**Formatos RAG estandarizados** (fuera de la numeración de fases: es la revisión que D-12 dejó
+prevista para "una vez estandarizados los formatos", ejecutada dentro de este mismo ciclo). `/rag`
+cubre los cinco RAG mensuales con una sola estructura de documento — ver D-15 y D-16 para el porqué de
+cada pieza. Lo que debe ser idéntico en los cinco (clasificación, razón social, domicilio, instrucción
+general, bloque de cierre) vive en código, en `lib/rag/constantes.ts`, no en la base — así no hay
+manera de que un formato lo traiga distinto. `lib/rag/{documento,render,estilos}.ts` es una función
+pura de datos a HTML, verificada importándola desde un script de Node suelto sin Next ni Supabase;
+`/rag/[formato]` la usa para ver, alternar entre formato vacío y con lo capturado, imprimir (en un
+iframe oculto) y editar lo particular del formato (`FormatoEditor.tsx` — nombre, periodicidad,
+sistema, documento de referencia, revisión, instrucciones propias; nunca `clave` ni los campos
+globales). No hay descarga directa de archivo: "Guardar como PDF" lo da el diálogo de impresión del
+propio navegador — generar el PDF en servidor (Chromium sin cabeza) se evaluó y se descartó por el
+peso de la dependencia, ver D-16. La migración `0005_rag.sql` agrega la tabla `formatos` y tres
+columnas a `elementos` (`referencia`, `seccion`, `orden_seccion`) que el área todavía tiene que llenar
+— el script extractor las deja explícitamente en `None`/`null`, no las inventa. `formatos_mensuales.json`
+se carga con `web/scripts/cargar-formatos.ts` (TypeScript, no Python: `formatos` no depende de ningún
+ciclo, así que mezclarlo con `cargar_catalogo.py` habría confundido esa distinción) o desde el botón
+"Cargar formatos" en `/rag`; cualquiera de los dos se corre una sola vez, no por ciclo. La segunda
+entrada (un generador local para cuando D-10 lo exija) queda diseñada pero sin escribir.
 
 **Ciclo piloto:** agosto 2026. Se libera para los dos sistemas internos —54 botones avisadores y 71
 hidrantes interiores— y da seguimiento a los tres restantes mediante recepción. Los criterios con los

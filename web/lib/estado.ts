@@ -1,13 +1,39 @@
-import { ETIQUETA_TEXTO_LIBRE, type CampoTextoLibre, type Estado, type Plantilla } from "./tipos";
+import {
+  ETIQUETA_TEXTO_LIBRE,
+  type CampoTextoLibre,
+  type Estado,
+  type Plantilla,
+  type PuntoDef,
+  type ValorPunto,
+} from "./tipos";
 
 export interface DatosRegistro {
   como_se_encontro: string | null;
   que_se_realizo: string | null;
+  /** Alimenta la columna Observaciones del documento RAG — ver
+   * docs/decisiones.md D-15 §7.2. No hay campo 'observaciones' aparte. */
   pendientes: string | null;
-  valores: Record<string, string>;
+  valores: Record<string, ValorPunto>;
 }
 
 const vacio = (v: string | null | undefined): boolean => !v || v.trim() === "";
+
+/**
+ * Si un punto de revisión ya tiene respuesta. Para si_no/si_no_na es
+ * presencia de la llave, no veracidad del valor: false (NO) es una
+ * respuesta tan válida como true (SI), y tratarla como "vacía" dejaría un
+ * elemento con todo en NO atascado en 'parcial' para siempre (ver
+ * docs/modelo-de-datos.md §3.3 y §4). Para el resto de los tipos sigue
+ * siendo "no vacío", convirtiendo a texto antes de comparar — así 0 en un
+ * punto 'numero' tampoco se lee como vacío.
+ */
+function contestado(punto: PuntoDef, valores: Record<string, ValorPunto> | undefined): boolean {
+  if (punto.tipo === "si_no" || punto.tipo === "si_no_na") {
+    return !!valores && Object.prototype.hasOwnProperty.call(valores, punto.id);
+  }
+  const valor = valores?.[punto.id];
+  return valor !== null && valor !== undefined && String(valor).trim() !== "";
+}
 
 /**
  * Deriva el estado de un elemento contra la plantilla vigente de su
@@ -37,7 +63,7 @@ export function calcularEstado(
   );
 
   const puntosCompletos = plantilla.puntos.every(
-    (punto) => !punto.requerido || !vacio(registro?.valores?.[punto.id]),
+    (punto) => !punto.requerido || contestado(punto, registro?.valores),
   );
 
   if (fotosCompletas && textosCompletos && puntosCompletos) {
@@ -67,7 +93,7 @@ export function faltantes(
     }
   }
   for (const punto of plantilla.puntos) {
-    if (punto.requerido && vacio(registro?.valores?.[punto.id])) {
+    if (punto.requerido && !contestado(punto, registro?.valores)) {
       lista.push(punto.etiqueta);
     }
   }

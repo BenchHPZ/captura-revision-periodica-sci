@@ -256,6 +256,184 @@ no condicionar el proyecto a la estandarización de formatos, que corre por sepa
 libro de RAG a partir de los puntos ya capturados. Los datos necesarios se están levantando desde
 este primer ciclo, de modo que la funcionalidad no exigirá recapturar nada.
 
+**Seguimiento.** Esa revisión se hizo — ver D-15 y D-16. Se pudo generar sin recapturar nada, tal
+como se anticipaba: los cinco puntos de revisión ya estaban modelados como datos (D-02) y el único
+ajuste real fue de forma, no de fondo — pasar sus respuestas de texto ("SI"/"NO") a booleano.
+
+---
+
+## D-15 · Estructura única para los cinco RAG mensuales
+
+**Estado:** vigente
+
+**Contexto.** Los cinco RAG mensuales son hoy cinco hojas de Excel de 2022 impresas a PDF, cada una
+con su propio acomodo de columnas, su propio encabezado y sus propias instrucciones — algunas ni
+siquiera coinciden entre sí en detalles básicos como si llevan la marca `INTERNAL#`. Eso impide
+llenarlos digitalmente contra un modelo común y analizar los resultados por sección o por punto de
+revisión entre formatos, que es justo lo que motivó esta revisión (ver D-12).
+
+**Decisión.** Los cinco formatos comparten una sola estructura de documento — mismo encabezado, mismo
+pie corrido, mismas columnas fijas (`ID`, `Numeración`, `Ubicación`, `Referencia`, puntos de la
+plantilla vigente, `Observaciones`) — con una tabla nueva, `formatos`, que declara esa identidad e
+imagen por `(nombre, periodicidad)`, separada de `plantillas` (que sigue declarando qué se supervisa,
+D-02). Dentro de esa estructura común:
+
+- **`Observaciones` deja de ser un punto de plantilla.** Antes vivía como un punto más de tipo texto,
+  repetido idéntico en las cinco plantillas con `requerido: false`. Ahora es columna fija del
+  documento, y se llena con `registros.pendientes` — no hay una columna `observaciones` aparte (una
+  primera versión de esta decisión sí agregó una; se retiró en la revisión de §7.2 porque duplicaba lo
+  que `pendientes` ya cubre, y ese campo ya estaba habilitado en `texto_libre` en los cinco sistemas).
+- **Los puntos `si_no`/`si_no_na` se guardan como booleano**, no como cadena `"SI"`/`"NO"`. Separar el
+  dato de su presentación es lo que hace posible el análisis por punto que motivó todo esto — contar,
+  promediar y comparar entre formatos sin normalizar texto antes. El costo quedó acotado a un solo
+  lugar delicado: `calcularEstado()` tenía que dejar de comprobar veracidad (`!!valor`) y pasar a
+  comprobar presencia de la llave, porque `false` (NO) es una respuesta válida y es falsy — con la
+  comprobación vieja, un elemento con todo en NO se habría quedado en `parcial` para siempre. Se pagó
+  ahora porque el esquema todavía no se aplicaba en Supabase y no había un solo registro capturado;
+  después del piloto habría costado una migración sobre 221 elementos.
+- **`Ubicación` seguía una lectura invertida.** El formato de campo es `AA00-00`: eje oeste-este, nave,
+  eje norte-sur, siempre por pares; fuera de nave es `Exterior` y se guía sólo por `Referencia`.
+  `scripts/extraer_rags.py` traducía `H 01 N A 01 02` a `"Nave A · 01-02"` — leyendo el eje como si
+  fuera la nave. Se corrigió a `"A01-02"`. Se verificó contra los cinco PDF de origen antes de tocar
+  el código: 61 de 71 hidrantes interiores y las 15 válvulas aéreas sí traen esa cuadrícula; el resto
+  no se adivina —RAG 2.2 y RAG 2.8 no traen columna de ubicación en el PDF (109 de 221 elementos en
+  total quedan con `ubicacion: null`), y el script señala en `notas` los casos ambiguos (`"0.1"/"0.2"`
+  en avisadores, que parecen nivel de planta y no eje; naves con el guion sin número) en vez de
+  resolverlos por su cuenta — mismo criterio que ya usaba para D-03.
+- **`ID` es correlativo dentro de cada edición del documento, no un dato guardado.** Se deriva al
+  generar, recorriendo las secciones y sus elementos en orden; se renumera solo si se da de alta o de
+  baja un elemento. Por eso el documento lleva ciclo y fecha de generación en el encabezado y
+  `Página X de Y` en el pie: sin ese sello, "item 14" deja de ser inequívoco entre una edición y la
+  siguiente.
+- **`Sección` es campo propio del catálogo** (`elementos.seccion` + `orden_seccion`), no derivado de
+  `zona` ni de `ubicacion`. Se consideró y se descartó reutilizar `zona` —ya existía y ya traía datos
+  para avisadores y válvulas subterráneas— precisamente porque atar la agrupación del documento a un
+  campo que sirve para otra cosa le quita al área la libertad de agrupar el RAG como convenga sin que
+  ese otro dato tenga que tener la forma correcta primero.
+
+**Consecuencias.** El área tiene trabajo de captura pendiente que ningún script puede inventar: 109
+elementos sin `ubicacion`/`referencia` y los 221 sin `seccion`/`orden_seccion` — se llenan desde
+`/catalogo` o por el JSON de importación, que ya concilia por `(sistema, código)` sin tocar los
+sistemas ausentes del archivo (D-13, D-14). A cambio, el documento generado es uno solo por
+definición, no cinco mantenidos a mano, y las respuestas quedan en una forma que sí se presta a
+análisis.
+
+**Alternativa descartada.** Mantener las cinco plantillas de Excel y limitarse a llenarlas por
+software. Se descartó porque conserva el problema de fondo — cinco imágenes distintas, sin columnas
+comparables entre sí — a cambio de parecerse más a lo que ya existe.
+
+**Revisión.** La primera versión de esta decisión guardaba `encabezado` y `cierre` como `jsonb` **por
+formato** en la propia tabla `formatos` — nada impedía que la razón social o el bloque de firmas
+quedaran distintos entre RAG por un error de captura, justo el problema que esta decisión buscaba
+resolver. Contrastado contra fotos de los RAG 2.4 y 2.8 reales, se corrigió:
+
+- **`clasificacion`, `razon_social`, `domicilio`, la instrucción general y el bloque de cierre
+  completo pasan a constantes en código** (`web/lib/rag/constantes.ts`), no a datos — es la única forma
+  de que "no haya posibilidad de cambiarlos" por formato. `documento_referencia` y `revision` siguen
+  siendo particulares de cada formato, pero se mueven del encabezado al **pie**, como en los RAG
+  reales. Las `instrucciones` de `formatos` quedan sólo con las propias de cada uno (p. ej. "P = Pie,
+  G = Gabinete"); la general se concatena al generar.
+- **El bloque de cierre se estandariza también en contenido**, no sólo en estructura: los PDF de
+  origen traían tres acomodos distintos ("Bombero que realizó" + "Coordinador Técnico de Soporte" en
+  RAG 2.2/2.3; los mismos dos más "Grupo" aparte en RAG 2.4; "Realizó" + "Coordinador de Soporte de
+  PCI" en RAG 2.7/2.8). El bloque global queda como **Realizó** (nombre, grupo y firma) · **Fecha** ·
+  **Coordinador de Soporte de PCI** (nombre y firma) — es el objetivo mismo de la estandarización, no
+  un descuido; el documento generado ya no reproduce literal el cierre de cada PDF de origen.
+- **Rediseño de impresión**, verificado renderizando RAG 2.2 y RAG 2.3 reales y comparando contra las
+  fotos: encabezado (clasificación + wordmark VW en un solo renglón, centrado y alto) y encabezados de
+  columna dentro de `<thead>`; pie corporativo y bloque de cierre dentro de `<tfoot>` — de la misma
+  tabla que trae los renglones, para que ambos se repitan de forma nativa al paginar sin programarlo.
+  `@page { margin: 8mm }` para aprovechar la hoja completa. `#`/`Numeración`/`Ubicación` con
+  `white-space: nowrap` y ancho fijo en milímetros para que nunca partan renglón. Cada punto de
+  revisión ocupa **una sola columna de 10mm**, con la respuesta (`SI`/`NO`/`NA`) escrita dentro de la
+  celda, bajo la etiqueta **rotada en vertical** (`writing-mode: vertical-rl`) para que la columna
+  quede angosta. Observaciones se lleva todo el ancho que sobra. Las secciones quedan enmarcadas con
+  regla gruesa arriba y abajo de la franja verde, para leerse como bloque propio dentro de la tabla.
+- **Un punto de revisión = una columna, no dos sub-columnas SI/NO.** El primer diseño le daba a cada
+  punto dos sub-columnas con casilla marcada con "X". Se revirtió por dos razones. La de forma: dos
+  casillas cuestan el doble de ancho sin agregar información, porque la respuesta es excluyente —
+  basta escribirla. La de fondo: las sub-columnas hacían que el número real de columnas dejara de
+  coincidir con `4 + puntos.length + 1`, que es lo que `render.ts` usaba en cada `colspan`. Con cinco
+  puntos la tabla tenía 15 columnas y los `colspan` decían 10, así que **todo lo de ancho completo
+  —wordmark, título, instrucciones, franjas de sección y pie— se cortaba a dos tercios de la hoja** y
+  el logo quedaba visiblemente descentrado. Al volver a una columna por punto los dos conteos vuelven
+  a ser el mismo número por construcción, y el defecto no puede reaparecer sin que se note.
+- **La etiqueta vertical lleva altura fija (`height: 18mm`), no libre.** Sin tope, una etiqueta larga
+  estira el encabezado hacia abajo; y como el encabezado se repite en cada hoja, ese exceso se paga en
+  todas. Con el tope, la etiqueta larga se parte en dos renglones verticales —que caben de sobra en
+  los 10mm de la columna, así que el ajuste no cuesta ancho— y todas las columnas quedan a la misma
+  altura. 18mm se eligió midiendo: por encima (22mm, 26mm) el encabezado crece sin que las etiquetas
+  dejen de partirse, y por debajo (15mm) ya no se gana ningún renglón por hoja pero alguna etiqueta
+  cae a tres líneas. Entre 26mm y 18mm la diferencia es de 32 a 34 renglones por hoja.
+- **El renderizador acepta las respuestas en booleano y en el texto viejo `"SI"`/`"NO"`.** Los
+  registros capturados en campo antes del cambio a booleanos (D-15) quedaron como cadenas, y conviven
+  con los nuevos en la misma tabla. `respuestaDe()` normaliza ambas formas al imprimir en vez de
+  migrar los datos: son capturas reales de un ciclo en curso y no hay motivo para reescribirlas.
+- **El logo VW se agrega**, wordmark `VWM_logo_Deep_Space_Blue_rgb.svg` de la skill `vw-brand-style`
+  (mismo lockup *VOLKSWAGEN / DE MÉXICO* de los RAG originales), embebido como marcado SVG crudo en
+  `constantes.ts` para que el documento siga siendo autocontenido. Fondo blanco en todo el documento,
+  no un panel oscuro — así son los RAG de origen; el verde queda reservado a los divisores de sección.
+  **No se embebe la tipografía corporativa "The Group"**: es un activo con licencia restringida que
+  `web/tailwind.config.ts` ya excluye de la aplicación por la misma razón (no se distribuye en un
+  despliegue público); el documento usa la misma pila de reemplazo que el resto de la app.
+- **El formato se vuelve editable desde `/rag/[formato]`**, acotado a lo mismo que es particular de
+  arriba — `clave` queda fuera (es la llave única y el slug de la URL, mismo criterio que
+  `PlantillaEditor.tsx` ya aplica al id de un punto existente); los campos globales ni siquiera llegan
+  a esa pantalla. `elementos` y `plantillas` se siguen editando sólo en `/catalogo`.
+
+---
+
+## D-16 · Un renderizador, pensado para dos entradas — sólo una se construye ahora
+
+**Estado:** vigente
+
+**Contexto.** Los formatos deben poder verse y llenarse digitalmente, imprimirse en blanco o con lo
+capturado, y exportarse a PDF con la misma imagen. El equipo no puede instalar nada — ni un ejecutable
+propio ni herramientas de conversión de PDF — así que la salida tiene que apoyarse en lo que el
+navegador ya sabe hacer. Además, D-10 (clasificación de la información) sigue **pendiente**: si
+seguridad de la información no autoriza el alojamiento externo de `captura-sci`, hace falta un camino
+que no dependa de él.
+
+**Decisión.** `lib/rag/documento.ts` y `lib/rag/render.ts` son una función pura de datos a HTML: no
+importan `server-only`, `next/*` ni `react`. Reciben exactamente la forma del catálogo exportado
+(§3.5 de `docs/modelo-de-datos.md`) y devuelven una cadena. Sobre esa base:
+
+- **Entrada A, la app — se construye ahora.** `/rag/[formato]` arma el documento desde Supabase, lo
+  incrusta en la pantalla, y usa el mismo HTML autocontenido (con su CSS embebido) para "Imprimir" —en
+  un iframe oculto, para no imprimir con el resto de la app de por medio. Imprimir en blanco o con lo
+  capturado, y exportar a PDF, los da el propio navegador (Chrome/Edge "Guardar como PDF"); no hace
+  falta generar el PDF por software. **No hay botón de descarga directa de un archivo**: se consideró
+  agregar generación de PDF en servidor (Chromium sin cabeza, tipo Puppeteer/Playwright) para que
+  "Descargar" entregara un `.pdf` real con un clic, y se descartó — dependencia nueva y pesada,
+  cold-start más largo en el despliegue, más superficie de fallas, a cambio de evitar un diálogo del
+  sistema que de todos modos hay que atravesar para "Imprimir". El límite es honesto y hay que tenerlo
+  presente: desde JavaScript no se puede preseleccionar "Guardar como PDF" ni saltarse el diálogo de
+  impresión — es una frontera de seguridad del navegador. El `<title>` del documento sí queda fijado
+  (p. ej. `RAG 2.3 — Agosto 2026`) para que sea el nombre que el diálogo sugiere al guardar.
+- **El encabezado y el pie no se programan para repetirse: se declaran.** Todo vive dentro de
+  `<thead>`/`<tfoot>` de una única `<table>`, que los navegadores repiten de forma nativa al paginar.
+  El bloque de firmas se repite con ellos porque así se decidió que debía verse — cada hoja se firma
+  por separado — aunque `cierre.repetir` queda declarado por formato, no global, para que un formato
+  de otra periodicidad lo pueda resolver distinto sin tocar los cinco mensuales.
+  **Limitación aceptada:** Chrome/Edge no soportan los contadores de página de CSS Paged Media
+  (`@page { @bottom-right { content: counter(page) } }`); el `Página X de Y` real, si se necesita, lo
+  añade el propio diálogo de impresión del navegador ("Más ajustes → Encabezados y pies de página"),
+  no esta plantilla.
+- **Entrada B, un generador local — queda diferida.** No se escribe todavía. Lo que se paga ahora es
+  que `documento.ts`/`render.ts` no dependan de nada del entorno, verificado importándolos desde un
+  script de Node suelto sin Next ni Supabase: si eso deja de funcionar, la entrada B queda bloqueada.
+  Cumplida esa condición, la entrada B es después leer el JSON exportado y escribir un `.html` a
+  disco — unas pocas decenas de líneas, sin tocar el renderizador.
+
+**Consecuencias.** El renderizador queda en TypeScript mientras que las utilerías locales existentes
+(`extraer_rags.py`, `cargar_catalogo.py`) están en Python — se acepta la mezcla en vez de reimplementar
+el HTML/CSS dos veces, que es la única forma de que las dos salidas no se desincronicen con el tiempo.
+
+**Alternativa descartada.** Un ejecutable de escritorio empaquetado. Se descartó de entrada: instalar
+un ejecutable es justo la restricción que el equipo no puede cumplir, y se pierde el motor de
+impresión del navegador, que es lo que resuelve la paginación sin escribir un renderizador de PDF
+propio.
+
 ---
 
 ## D-13 · El código del elemento es único por sistema, no por ciclo

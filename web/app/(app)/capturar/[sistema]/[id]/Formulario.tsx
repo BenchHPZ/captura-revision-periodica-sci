@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { reducirImagen } from "@/lib/imagen";
 import { DEPOSITO, rutaFoto } from "@/lib/rutas";
 import { calcularEstado, faltantes } from "@/lib/estado";
-import type { Elemento, Foto, Plantilla, PuntoDef, Registro } from "@/lib/tipos";
+import type { Elemento, Foto, Plantilla, PuntoDef, Registro, ValorPunto } from "@/lib/tipos";
 import { agregarFoto, eliminarFoto, guardarYSiguiente } from "./actions";
 
 interface FotoConUrl extends Foto {
@@ -63,7 +63,7 @@ export function Formulario({
     que_se_realizo: registro?.que_se_realizo ?? "",
     pendientes: registro?.pendientes ?? "",
   });
-  const [valores, setValores] = useState<Record<string, string>>(registro?.valores ?? {});
+  const [valores, setValores] = useState<Record<string, ValorPunto>>(registro?.valores ?? {});
   const [fotosLocales, setFotosLocales] = useState<FotoLocal[]>(() =>
     fotos.map((f) => ({
       key: f.id,
@@ -282,7 +282,7 @@ export function Formulario({
               <ControlPunto
                 key={punto.id}
                 punto={punto}
-                valor={valores[punto.id] ?? ""}
+                valor={valores[punto.id]}
                 onChange={(v) => setValores((prev) => ({ ...prev, [punto.id]: v }))}
               />
             ))}
@@ -448,45 +448,70 @@ function CampoTexto({
   );
 }
 
+/** Codifica un valor si_no/si_no_na para el <input type="hidden"> que
+ * viaja en FormData — HTML sólo transporta cadenas. actions.ts lo decodifica
+ * de vuelta consultando el tipo del punto en la plantilla. Cuando el punto
+ * no se ha contestado (valor === undefined) el hidden ni se renderiza: la
+ * llave debe estar ausente de FormData, no presente con un valor vacío,
+ * para que la regla de "presencia de la llave" de lib/estado.ts funcione
+ * (ver docs/modelo-de-datos.md §3.3). */
+function codificarSiNo(valor: boolean | null): string {
+  return valor === null ? "na" : String(valor);
+}
+
 function ControlPunto({
   punto,
   valor,
   onChange,
 }: {
   punto: PuntoDef;
-  valor: string;
-  onChange: (v: string) => void;
+  valor: ValorPunto | undefined;
+  onChange: (v: ValorPunto) => void;
 }) {
   const nombreCampo = `valores.${punto.id}`;
 
   if (punto.tipo === "si_no" || punto.tipo === "si_no_na") {
-    const opciones = punto.tipo === "si_no" ? ["SI", "NO"] : ["SI", "NO", "NA"];
+    const opciones: { valor: boolean | null; etiqueta: string }[] =
+      punto.tipo === "si_no"
+        ? [
+            { valor: true, etiqueta: "Sí" },
+            { valor: false, etiqueta: "No" },
+          ]
+        : [
+            { valor: true, etiqueta: "Sí" },
+            { valor: false, etiqueta: "No" },
+            { valor: null, etiqueta: "N/A" },
+          ];
     return (
       <div>
         <p className="text-sm text-vw-deep-space">
           {punto.etiqueta}
           {punto.requerido && <span className="text-vw-red"> *</span>}
         </p>
-        <input type="hidden" name={nombreCampo} value={valor} />
+        {valor !== undefined && (
+          <input type="hidden" name={nombreCampo} value={codificarSiNo(valor as boolean | null)} />
+        )}
         <div className="mt-1 flex gap-2">
           {opciones.map((op) => (
             <button
-              key={op}
+              key={op.etiqueta}
               type="button"
-              onClick={() => onChange(op)}
+              onClick={() => onChange(op.valor)}
               className={`px-3 py-1.5 text-sm font-medium transition ${
-                valor === op
+                valor === op.valor
                   ? "bg-vw-deep-space text-white"
                   : "border border-vw-dsb-20 text-vw-deep-space hover:border-vw-vivid-green"
               }`}
             >
-              {op === "SI" ? "Sí" : op === "NO" ? "No" : "N/A"}
+              {op.etiqueta}
             </button>
           ))}
         </div>
       </div>
     );
   }
+
+  const valorTexto = typeof valor === "string" ? valor : "";
 
   if (punto.tipo === "seleccion") {
     return (
@@ -498,7 +523,7 @@ function ControlPunto({
         <select
           id={punto.id}
           name={nombreCampo}
-          value={valor}
+          value={valorTexto}
           onChange={(e) => onChange(e.target.value)}
           className="mt-1 w-full border border-vw-dsb-20 px-3 py-2 text-sm outline-none focus:border-vw-vivid-green"
         >
@@ -524,7 +549,7 @@ function ControlPunto({
         id={punto.id}
         name={nombreCampo}
         type={tipoInput}
-        value={valor}
+        value={valorTexto}
         onChange={(e) => onChange(e.target.value)}
         className="mt-1 w-full border border-vw-dsb-20 px-3 py-2 text-sm outline-none focus:border-vw-vivid-green"
       />

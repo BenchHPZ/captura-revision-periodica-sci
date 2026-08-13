@@ -1,0 +1,70 @@
+// Lo que es idéntico en los cinco formatos mensuales, y por eso vive en
+// código y no en la tabla 'formatos': así no hay manera de que diverjan
+// entre RAG (ver docs/decisiones.md D-15 §7.1). Puro — sin Next, sin
+// Supabase, sin React — mismo requisito que el resto de lib/rag/.
+import type { CierreFormato } from "./tipos";
+
+export const CLASIFICACION = "INTERNAL";
+
+export const RAZON_SOCIAL = "Volkswagen de México S.A. de C.V.";
+
+export const DOMICILIO = ["Calle Mineral de Valenciana 611, Puerto Interior", "Silao Guanajuato, México."];
+
+/**
+ * Única para los cinco formatos. Las 'instrucciones' propias de cada
+ * formato (p. ej. "P = Pie, G = Gabinete" en RAG 2.2) se concatenan
+ * después de ésta al renderizar — ver documento.ts.
+ */
+export const INSTRUCCION_GENERAL =
+  "Marque SI o NO en cada punto de revisión según el estado del elemento. Toda respuesta NO debe " +
+  "quedar explicada en la columna de Observaciones, y darle seguimiento hasta su corrección.";
+
+/**
+ * Bloque de cierre único para los cinco. Estandariza a propósito los tres
+ * acomodos distintos que traían los PDF de origen (RAG 2.2/2.3: "Bombero
+ * que realizó" + "Coordinador Técnico de Soporte"; RAG 2.4: los mismos
+ * dos más "Grupo" aparte; RAG 2.7/2.8: "Realizó" + "Coordinador de
+ * Soporte de PCI") — es el objetivo de la estandarización, no un
+ * descuido. "Grupo" se pliega dentro de la etiqueta de "Realizó" en vez
+ * de ser una cuarta columna, para no romper el patrón de tres campos que
+ * ya traían la mayoría de los formatos.
+ */
+export const CIERRE_ESTANDAR: CierreFormato = {
+  repetir: true,
+  campos: [
+    { id: "realizo", etiqueta: "Realizó (nombre, grupo y firma)", tipo: "firma" },
+    { id: "fecha", etiqueta: "Fecha", tipo: "fecha" },
+    { id: "coordinador", etiqueta: "Coordinador de Soporte de PCI (nombre y firma)", tipo: "firma" },
+  ],
+};
+
+/**
+ * Wordmark "VOLKSWAGEN / DE MÉXICO" — mismo lockup que ya traen los RAG
+ * originales, tomado literal de la skill vw-brand-style
+ * (VWM_logo_Deep_Space_Blue_rgb.svg). Se embebe como marcado crudo, no
+ * como ruta de archivo, para que el documento siga siendo un único HTML
+ * autocontenido (funciona dentro del iframe de impresión sin red).
+ */
+export const LOGO_VW_SVG = `<svg id="area_de_seguridad" data-name="area de seguridad" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 778.61 268.64">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #002733;
+      }
+    </style>
+  </defs>
+  <path class="cls-1" d="M99.35,127.66h-13.97l-22.05-63.32h13.13l12.29,37.05c1.22,3.56,2.62,7.88,3.75,12.47h.18c.94-4.31,1.98-7.88,3.84-13.23l12.48-36.3h12.48l-22.13,63.32h0ZM160.12,74.29c-8.72,0-16.79,6.95-16.79,21.19,0,13.41,5.25,22.14,16.61,22.14,8.25,0,17.07-6.38,17.07-21.57,0-14.07-6.01-21.76-16.88-21.76h0ZM159.09,128.71c-19.32,0-28.79-12.3-28.79-31.9,0-20.92,13.98-33.48,30.96-33.48s28.79,10.13,28.79,31.79-13.79,33.59-30.96,33.59h0ZM208.72,127.66v-63.32h12.2v52.62h20.53v10.7h-32.73ZM290.53,127.66l-20.45-30.38v30.38h-12.2v-63.32h12.2v28.7l20.53-28.7h14.84l-23.18,30.58,24.2,32.74h-15.94ZM331.68,128.69c-4.5,0-9-.47-12.95-1.5l.76-11.35c3.57,1.21,8.62,2.25,13.22,2.25,6.18,0,11.16-2.53,11.16-8.35,0-12.09-26.74-6.76-26.74-27.39,0-11.25,8.9-19.04,24.11-19.04,3.55,0,7.69.46,11.44,1.12l-.67,10.69c-3.54-1.02-7.49-1.68-11.35-1.68-7.03,0-10.78,3.19-10.78,7.68,0,11.37,26.83,7.33,26.83,26.93,0,11.92-9.47,20.63-25.04,20.63h0ZM437.88,127.66h-14.92l-9.19-34.88c-1.03-4.05-1.79-8.64-2.45-13.14h-.09c-.47,4.4-1.31,8.64-2.43,12.86l-9.21,35.17h-14.06l-16.12-63.32h12.84l8.62,34.99c1.02,4.12,1.78,8.53,2.35,12.94h.09c.66-4.21,1.41-8.53,2.54-12.56l9.66-35.37h12.86l9.76,35.18c.94,3.46,1.97,7.97,2.53,12.38h.1c.66-4.41,1.51-8.44,2.43-12.19l8.63-35.37h12.17l-16.11,63.32h0ZM492.36,88.46c-1.22-3.47-2.15-6.56-2.99-10.13h-.19c-.76,3.29-1.69,6.94-3,10.6l-5.71,16.13h17.82l-5.92-16.6h0ZM505.89,127.66l-4.42-12.95h-24.11l-4.38,12.95h-12.3l22.13-63.31h13.79l22.62,63.31h-13.31ZM581.47,77.48c-5.06-1.97-10.88-3.19-16.79-3.19-12.47,0-21.48,7.88-21.48,22.04,0,13.42,7.31,21.3,20.16,21.3,2.99,0,5.63-.37,8.07-1.12v-22.04h12.19v30.19c-6.28,2.54-14.07,3.95-21.66,3.95-20.07,0-31.99-11.82-31.99-31.14s13.51-34.05,35.46-34.05c6.28,0,12.47,1.13,17.9,2.73l-1.85,11.34h0ZM607.08,127.66v-63.32h34.42v10.24h-22.22v15.56h21.11v9.94h-21.11v17.16h22.22v10.42h-34.42ZM700.38,127.66l-18.75-32.45c-2.74-4.78-5.64-9.76-7.5-13.89.37,5.45.55,16.13.55,23.73v22.61h-11.82v-63.32h15.11l17.81,30.58c2.82,4.88,6.01,10.5,8.34,15.28-.47-6.37-.66-18.37-.66-26.16v-19.7h11.82v63.32h-14.92Z"/>
+  <g>
+    <g>
+      <path class="cls-1" d="M274.94,205.09c-2.34,0-4.38-.1-6.29-.17v-22.51c1.77-.07,4.51-.17,7.29-.17,6.99,0,11.44,3.11,11.44,11.04s-5.08,11.8-12.44,11.8ZM275.64,185.89c-1,0-1.94.03-2.64.1v15.22c.6.1,1.5.17,2.37.17,4.25,0,7.32-2.41,7.32-7.76,0-4.85-1.91-7.73-7.06-7.73Z"/>
+      <path class="cls-1" d="M300.99,204.96v-22.57h12.27v3.64h-7.93v5.55h7.52v3.54h-7.52v6.12h7.93v3.71h-12.27Z"/>
+      <path class="cls-1" d="M366.33,204.96l-1.61-10.77c-.33-2.14-.54-3.81-.7-5.38h-.07c-.3,1.44-.67,3.04-1.24,4.82l-3.58,11.34h-4.31l-3.44-10.47c-.6-1.84-1.17-3.88-1.44-5.69h-.07c-.13,2.01-.37,3.78-.64,5.75l-1.27,10.4h-4.41l3.48-22.57h5.08l3.78,11.6c.53,1.6.94,3.14,1.24,4.75h.07c.33-1.74.7-3.01,1.27-4.68l3.88-11.67h5.05l3.51,22.57h-4.58Z"/>
+      <path class="cls-1" d="M384.32,204.96v-22.57h12.27v3.64h-7.93v5.55h7.52v3.54h-7.52v6.12h7.93v3.71h-12.27Z"/>
+      <path class="cls-1" d="M423.68,204.96l-4.85-8.29-4.85,8.29h-5.15l7.19-11.54-6.75-11.04h5.05l4.58,7.82,4.55-7.82h4.95l-6.66,11,7.42,11.57h-5.48Z"/>
+      <path class="cls-1" d="M441.88,204.96v-22.57h4.35v22.57h-4.35Z"/>
+      <path class="cls-1" d="M470.3,205.26c-7.89,0-10.43-5.25-10.43-10.87,0-7.16,3.75-12.17,11.3-12.17,1.6,0,3.31.2,4.78.6l-.47,3.95c-1.47-.43-3.01-.67-4.55-.67-4.21,0-6.29,3.18-6.29,7.56,0,4.92,2.04,7.66,6.59,7.66,1.37,0,3.21-.4,4.38-.94l.5,3.88c-1.67.6-3.71,1-5.82,1Z"/>
+      <path class="cls-1" d="M498.93,205.33c-6.89,0-10.27-4.38-10.27-11.37,0-7.46,4.98-11.94,11.04-11.94s10.27,3.61,10.27,11.34-4.92,11.97-11.04,11.97ZM499.3,185.93c-3.11,0-5.99,2.47-5.99,7.56,0,4.78,1.87,7.89,5.92,7.89,2.94,0,6.09-2.27,6.09-7.69,0-5.02-2.14-7.76-6.02-7.76Z"/>
+    </g>
+    <polygon class="cls-1" points="388.45 180.98 387.82 178.64 394.13 176.12 395.01 179.2 388.45 180.98"/>
+  </g>
+</svg>`;

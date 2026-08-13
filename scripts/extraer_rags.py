@@ -68,6 +68,9 @@ def elemento(
     *,
     zona: str | None = None,
     ubicacion: str | None = None,
+    referencia: str | None = None,
+    seccion: str | None = None,
+    orden_seccion: int | None = None,
     tipo: str | None = None,
     responsable: str | None = None,
     item_rag: int | None = None,
@@ -80,6 +83,12 @@ def elemento(
         "nombre": nombre,
         "zona": zona,
         "ubicacion": ubicacion,
+        "referencia": referencia,
+        # 'seccion'/'orden_seccion' son campo propio del catálogo, asignado
+        # por el área -- no se derivan aquí (ver docs/decisiones.md D-15).
+        # Quedan en None para que main() los señale como pendientes.
+        "seccion": seccion,
+        "orden_seccion": orden_seccion,
         "tipo": tipo,
         "responsable": responsable,
         "item_rag": item_rag,
@@ -196,25 +205,39 @@ def extraer_hidrantes_exteriores(texto: str, anomalias: Anomalias) -> list[dict]
 FILA_HIDRANTE_INT = re.compile(
     r"^(\d+)\s+H\s+(\d+)\s+N\s*([A-Z])\s+(\d+)\s+(\d+)\s*(\(.*\))?\s*$", re.M
 )
-# Los hidrantes de azotea (H-62 a H-71) no llevan columna de nave/subzona
-# numérica: la ubicación viene ya como texto libre ("(PA) pasillo").
+# Los hidrantes de azotea (H-62 a H-71) no llevan columna N/nave/eje: la
+# ubicación viene ya como texto libre ("(PA) pasillo"). No se traducen a
+# "Exterior": "(PA)"/"(PB)" son planta alta/planta baja de la propia nave,
+# no fuera de ella -- se deja sin 'ubicacion' y se reporta, en vez de
+# adivinar (ver docs/decisiones.md D-15).
 FILA_HIDRANTE_INT_TEXTO = re.compile(r"^(\d+)\s+H\s+(\d+)\s+O\s+(.+)$", re.M)
 
 
 def extraer_hidrantes_interiores(texto: str, anomalias: Anomalias) -> list[dict]:
-    filas = []
-    for item, numero, nave, sub, pos, extra in FILA_HIDRANTE_INT.findall(texto):
-        ubicacion = f"Nave {nave} · {sub}-{pos}"
-        if extra:
-            ubicacion += f" {extra}"
-        filas.append((int(item), numero, ubicacion))
+    filas: list[tuple[int, str, str | None, str | None]] = []  # (item, numero, ubicacion, referencia)
+
+    for item, numero, eje_oe, nave, eje_ns, extra in FILA_HIDRANTE_INT.findall(texto):
+        # Formato AA00-00: eje oeste-este + nave + eje norte-sur, siempre
+        # por pares. El paréntesis final ("(EMUL)") es una referencia
+        # corta, no parte del eje -- ver CLAUDE.md / docs/decisiones.md.
+        ubicacion = f"{eje_oe}{nave}-{eje_ns}"
+        referencia = extra.strip("() ").strip() if extra else None
+        filas.append((int(item), numero, ubicacion, referencia))
+
     for item, numero, resto in FILA_HIDRANTE_INT_TEXTO.findall(texto):
-        filas.append((int(item), numero, resto.strip()))
+        resto = resto.strip()
+        filas.append((int(item), numero, None, resto or None))
+        anomalias.registrar(
+            "RAG 2.3",
+            f"H-{numero} (renglón {item}) no trae eje/nave/eje en el formato, sólo '{resto}'; "
+            "queda sin 'ubicacion' -- confirmar si de verdad es 'Exterior' o sólo falta capturar el eje.",
+        )
+
     filas.sort(key=lambda f: f[0])
 
-    repetidos = Counter(numero for _, numero, _ in filas)
+    repetidos = Counter(numero for _, numero, _, _ in filas)
     resultado = []
-    for orden, (item, numero, ubicacion) in enumerate(filas, start=1):
+    for orden, (item, numero, ubicacion, referencia) in enumerate(filas, start=1):
         codigo = f"H-{numero}"
         notas = None
         if repetidos[numero] > 1:
@@ -229,6 +252,7 @@ def extraer_hidrantes_interiores(texto: str, anomalias: Anomalias) -> list[dict]
                 "hidrantes_interiores",
                 codigo,
                 ubicacion=ubicacion,
+                referencia=referencia,
                 responsable="Benjamín",
                 item_rag=item,
                 orden=orden,
@@ -236,7 +260,7 @@ def extraer_hidrantes_interiores(texto: str, anomalias: Anomalias) -> list[dict]
             )
         )
 
-    numeros = {int(n) for _, n, _ in filas}
+    numeros = {int(n) for _, n, _, _ in filas}
     faltantes = sorted(set(range(1, max(numeros) + 1)) - numeros)
     if faltantes:
         anomalias.registrar("RAG 2.3", f"no aparece ningún H-{faltantes} en el formato")
@@ -248,6 +272,25 @@ def extraer_hidrantes_interiores(texto: str, anomalias: Anomalias) -> list[dict]
 FILA_AVISADOR = re.compile(
     r"^ELEM\.\s*(\S+)\s+LOC\.\s*(.+?)\s*(HMS-D)\s*$", re.M
 )
+
+# Divide el texto crudo de LOC. en ubicación AA00-00 + referencia corta.
+# Sólo se convierte cuando el eje norte-sur es un par de dos dígitos
+# limpio: "0.1"/"0.2" no lo son -- parecen nivel de planta (alta/baja),
+# no eje -- y tampoco se fuerza cuando falta la nave o el texto es
+# enteramente libre ("Pent house Centro", "Almacén Residuos"...). En esos
+# casos se deja sin 'ubicacion' y se reporta, en vez de adivinar (ver
+# docs/decisiones.md D-15).
+_PATRON_LOC_AVISADOR = re.compile(r"^([A-Z]{1,2})\s*(\d+)\s*-\s*(\d{2})\s*(.*)$")
+
+
+def _dividir_ubicacion_avisador(loc: str) -> tuple[str | None, str | None, str | None]:
+    """(ubicacion, referencia, motivo). 'motivo' es None si sí se dividió."""
+    loc = loc.strip()
+    m = _PATRON_LOC_AVISADOR.match(loc)
+    if not m:
+        return None, (loc or None), f"'{loc}' no tiene el formato letra-nave-eje(00) esperado"
+    eje_oe, nave, eje_ns, resto = m.groups()
+    return f"{eje_oe}{nave.zfill(2)}-{eje_ns}", (resto.strip() or None), None
 
 
 def extraer_avisadores(paginas_texto: list[str], anomalias: Anomalias) -> list[dict]:
@@ -300,26 +343,45 @@ def extraer_avisadores(paginas_texto: list[str], anomalias: Anomalias) -> list[d
         )
 
     repetidos = Counter(num for _, _, filas in bloques for num, _, _ in filas)
+    sin_ubicacion = 0
     for slug, zona, filas in bloques:
-        for num, ubicacion, tipo in filas:
+        for num, loc, tipo in filas:
             orden += 1
             codigo = f"AV-{slug}-{num}" if repetidos[num] > 1 else f"AV-{num}"
-            notas = None
+
+            notas_partes = []
             if repetidos[num] > 1:
-                notas = f"El folio '{num}' se repite en más de una zona del RAG 2.4; son avisadores distintos con el mismo número (ver docs/decisiones.md D-03)."
+                notas_partes.append(
+                    f"El folio '{num}' se repite en más de una zona del RAG 2.4; son avisadores distintos con el mismo número (ver docs/decisiones.md D-03)."
+                )
+            ubicacion, referencia, motivo = _dividir_ubicacion_avisador(loc)
+            if motivo:
+                sin_ubicacion += 1
+                notas_partes.append(f"Sin 'ubicacion' en formato AA00-00: {motivo}.")
+
             resultado.append(
                 elemento(
                     codigo,
                     "botones_avisadores",
                     f"ELEM. {num}",
                     zona=zona,
-                    ubicacion=ubicacion.strip(),
+                    ubicacion=ubicacion,
+                    referencia=referencia,
                     tipo=tipo,
                     responsable="Benjamín",
                     orden=orden,
-                    notas=notas,
+                    notas=" ".join(notas_partes) or None,
                 )
             )
+
+    if sin_ubicacion:
+        anomalias.registrar(
+            "RAG 2.4",
+            f"{sin_ubicacion} de {orden} avisadores quedaron sin 'ubicacion' en formato AA00-00 -- "
+            "el texto de LOC. no trae un eje norte-sur de dos dígitos limpio (aparece '0.1'/'0.2', "
+            "sin nave, o es referencia de texto libre). Quedó completo en 'referencia'; confirmar en "
+            "sitio si corresponde asignarles eje o si de verdad son áreas sin cuadrícula.",
+        )
     return resultado
 
 
@@ -331,13 +393,15 @@ FILA_VALVULA_AEREA = re.compile(r"^(VH-\d+)\s+([A-Z])\s+(\d+)\s+(\d+)\s*$", re.M
 def extraer_valvulas_aereas(texto: str, anomalias: Anomalias) -> list[dict]:
     filas = FILA_VALVULA_AEREA.findall(texto)
     resultado = []
-    for orden, (codigo, nave, sub, pos) in enumerate(filas, start=1):
+    # Mismo formato AA00-00 que hidrantes interiores: eje oeste-este +
+    # nave + eje norte-sur (ver extraer_hidrantes_interiores).
+    for orden, (codigo, eje_oe, nave, eje_ns) in enumerate(filas, start=1):
         resultado.append(
             elemento(
                 codigo,
                 "valvulas_aereas",
                 codigo,
-                ubicacion=f"Nave {nave} · {sub}-{pos}",
+                ubicacion=f"{eje_oe}{nave}-{eje_ns}",
                 responsable=RESPONSABLE_AEREAS.get(codigo),
                 orden=orden,
             )
@@ -405,7 +469,6 @@ def extraer_valvulas_subterraneas(paginas_texto: list[str], anomalias: Anomalias
 # ---------------------------------------------------------------- plantillas
 
 SI_NO = "si_no"
-TEXTO = "texto"
 
 PLANTILLAS = {
     "botones_avisadores": {
@@ -415,7 +478,6 @@ PLANTILLAS = {
         ],
         "puntos": [
             {"id": "buen_estado", "etiqueta": "Buen estado", "tipo": SI_NO, "requerido": True},
-            {"id": "observaciones", "etiqueta": "Observaciones", "tipo": TEXTO, "requerido": False},
         ],
         "texto_libre": ["como_se_encontro", "que_se_realizo", "pendientes"],
     },
@@ -429,7 +491,6 @@ PLANTILLAS = {
             {"id": "gabinete_buen_estado", "etiqueta": "Gabinete en buen estado", "tipo": SI_NO, "requerido": True},
             {"id": "manguera_piton", "etiqueta": "Manguera y pitón en buen estado", "tipo": SI_NO, "requerido": True},
             {"id": "pintura", "etiqueta": "Pintura", "tipo": SI_NO, "requerido": True},
-            {"id": "observaciones", "etiqueta": "Observaciones", "tipo": TEXTO, "requerido": False},
         ],
         "texto_libre": ["como_se_encontro", "que_se_realizo", "pendientes"],
     },
@@ -444,7 +505,6 @@ PLANTILLAS = {
             {"id": "pintura_buen_estado", "etiqueta": "Pintura en buen estado", "tipo": SI_NO, "requerido": True},
             {"id": "mangueras_buen_estado", "etiqueta": "Mangueras en buen estado", "tipo": SI_NO, "requerido": True},
             {"id": "piton_buen_estado", "etiqueta": "Pitón en buen estado", "tipo": SI_NO, "requerido": True},
-            {"id": "observaciones", "etiqueta": "Observaciones", "tipo": TEXTO, "requerido": False},
         ],
         "texto_libre": ["como_se_encontro", "que_se_realizo", "pendientes"],
     },
@@ -459,7 +519,6 @@ PLANTILLAS = {
             {"id": "valvula_abierta", "etiqueta": "Válvula abierta", "tipo": SI_NO, "requerido": True},
             {"id": "candado_cadena", "etiqueta": "Candado y cadena", "tipo": SI_NO, "requerido": True},
             {"id": "buen_estado", "etiqueta": "En buen estado", "tipo": SI_NO, "requerido": True},
-            {"id": "observaciones", "etiqueta": "Observaciones", "tipo": TEXTO, "requerido": False},
         ],
         "texto_libre": ["como_se_encontro", "pendientes"],
     },
@@ -471,7 +530,6 @@ PLANTILLAS = {
         "puntos": [
             {"id": "valvula_abierta", "etiqueta": "Válvula abierta", "tipo": SI_NO, "requerido": True},
             {"id": "valvula_buen_estado", "etiqueta": "Válvula en buen estado", "tipo": SI_NO, "requerido": True},
-            {"id": "observaciones", "etiqueta": "Observaciones", "tipo": TEXTO, "requerido": False},
         ],
         "texto_libre": ["como_se_encontro", "que_se_realizo", "pendientes"],
     },
@@ -550,6 +608,16 @@ def main() -> int:
         )
 
     anomalias.imprimir()
+
+    sin_ubicacion = sum(1 for e in elementos if e["ubicacion"] is None)
+    print(
+        f"\nPendiente de captura manual (no es un error, es alcance de este script):\n"
+        f"  - 'seccion'/'orden_seccion': ningún elemento los trae — es campo propio del\n"
+        f"    catálogo, se asigna desde /catalogo antes de generar los RAG (ver docs/decisiones.md D-15).\n"
+        f"  - 'ubicacion': {sin_ubicacion} de {len(elementos)} elementos la tienen en None "
+        f"(RAG 2.2 y RAG 2.8 no traen columna de ubicación en el PDF; algunos RAG 2.3/2.4 "
+        f"quedaron ambiguos — ver anomalías arriba)."
+    )
 
     salida_catalogo = Path(args.salida_catalogo or f"catalogo_{args.ciclo}.json")
     salida_plantillas = Path(args.salida_plantillas or f"plantillas_{args.ciclo}.json")

@@ -14,6 +14,7 @@ erDiagram
     ciclos ||--o{ entrada : "recibe por ciclo"
     sistemas ||--o{ plantillas : "una por sistema"
     sistemas ||--o{ elementos : "clasifica"
+    sistemas ||--o{ formatos : "define su documento"
     elementos ||--o| registros : "lo capturado"
     registros ||--o{ fotos : "sus fotografías"
     entrada |o--o| fotos : "al asignar (Flujo 3)"
@@ -23,12 +24,13 @@ Tres conjuntos con ciclos de vida distintos:
 
 | Conjunto | Tablas | Quién lo modifica | Cuándo |
 |---|---|---|---|
-| **Configuración** | `ciclos`, `sistemas` | Encargado de sistemas | Al abrir el ciclo |
+| **Configuración** | `ciclos`, `sistemas`, `formatos` | Encargado de sistemas | Al abrir el ciclo; `formatos` sólo cuando cambia el documento oficial, no cada mes |
 | **Catálogo** | `elementos`, `plantillas` | Encargado de sistemas | Al abrir el ciclo y durante la ejecución |
 | **Resultados** | `registros`, `fotos`, `entrada` | Quien captura | Durante la ejecución |
 
 Todo cuelga de `ciclos`. Un ciclo es un mes de revisión; cerrar uno y abrir el siguiente no toca los
-datos del anterior.
+datos del anterior. `formatos` es la excepción: no cuelga de ningún ciclo — es la identidad y la
+imagen de un RAG, estable entre meses (ver §2.8).
 
 ---
 
@@ -109,6 +111,9 @@ Define **qué se revisa**. Es el catálogo del ciclo.
 | `orden` | integer | no | Orden de recorrido dentro del sistema |
 | `activo` | boolean | no | Falso retira el elemento del ciclo sin borrar lo capturado |
 | `notas` | text | sí | Observaciones del catálogo, no de la revisión |
+| `referencia` | text | sí | Ayuda corta a la ubicación (≤5 palabras), para distinguir elementos próximos o similares. Columna fija del documento RAG |
+| `seccion` | text | sí | Agrupador del documento RAG. Campo propio del catálogo — no se deriva de `zona` ni de `ubicacion`, para que el área pueda agrupar como convenga |
+| `orden_seccion` | smallint | sí | Orden de la sección dentro del documento |
 
 Restricción: `codigo` único por `(ciclo_id, sistema_id, codigo)` — dentro de su sistema, no en todo
 el ciclo.
@@ -135,7 +140,7 @@ Lo capturado para un elemento. Un renglón por elemento y ciclo.
 | `elemento_id` | uuid | no | Referencia a `elementos`. Único |
 | `como_se_encontro` | text | sí | Descripción del estado inicial |
 | `que_se_realizo` | text | sí | Mantenimiento correctivo y limpieza aplicados |
-| `pendientes` | text | sí | Lo que quedó abierto por falta de insumos o mantenimiento mayor |
+| `pendientes` | text | sí | Lo que quedó abierto por falta de insumos o mantenimiento mayor. También alimenta la columna Observaciones del documento RAG — ver docs/decisiones.md D-15 §7.2; no hay una columna `observaciones` aparte |
 | `valores` | jsonb | no | Respuestas a los puntos de la plantilla. Ver §3.3 |
 | `estado` | text | no | `sin_iniciar`, `parcial` o `completo`. Derivado. Ver §4 |
 | `capturado_por` | text | sí | Usuario que capturó |
@@ -172,6 +177,36 @@ Lo capturado para un elemento. Un renglón por elemento y ciclo.
 | `foto_id` | uuid | sí | Referencia a `fotos` una vez asignada |
 | `subida` | timestamptz | no | Momento de la carga |
 
+### 2.8 `formatos`
+
+La identidad de un RAG: lo que es **particular** de ese documento y no cambia entre ciclos. No cuelga
+de `ciclos` — se identifica por `(nombre, periodicidad)`, no por mes. Lo que sí cambia mes a mes —los
+puntos de revisión— sigue viviendo en `plantillas` (§2.3); esa separación es la que permite que un
+formato semanal o diario entre después sin tocar los cinco mensuales. Ver docs/decisiones.md D-15 y
+D-16.
+
+Lo que debe ser **idéntico** en los cinco formatos mensuales —clasificación, razón social, domicilio,
+la instrucción general y el bloque de cierre— no está en esta tabla: vive como constantes en
+`web/lib/rag/constantes.ts`, precisamente para que no haya manera de que un formato lo traiga distinto
+a los demás (D-15 §7.1). `armarDocumentoRAG()` (`web/lib/rag/documento.ts`) es quien compone ambas
+fuentes en un solo `DocumentoRAG` al generar.
+
+| Campo | Tipo | Nulo | Descripción |
+|---|---|---|---|
+| `id` | uuid | no | Llave primaria |
+| `clave` | text | no | Identificador corto del documento oficial. Único. Ejemplo: `RAG 2.3` |
+| `nombre` | text | no | Título completo del formato |
+| `periodicidad` | text | no | `mensual` hoy; el campo admite otros valores para inspecciones más frecuentes |
+| `sistema_id` | uuid | sí | Referencia a `sistemas`. Nulo para formatos que no recorren un catálogo de elementos (p. ej. por evento) |
+| `documento_referencia` | text | no | Ejemplo: `I1.15M2_4037-002`. Va al **pie** del documento, no al encabezado |
+| `revision` | text | sí | Va al pie, junto con `documento_referencia` |
+| `instrucciones` | jsonb | no | Sólo las instrucciones **propias** de este formato (p. ej. "P = Pie, G = Gabinete" en RAG 2.2). La instrucción general no se repite aquí — se concatena al generar. Ver §3.4 |
+| `notas` | text | sí | Discrepancias del documento de origen frente al proceso real, señaladas sin resolver — mismo criterio que `elementos.notas` |
+| `creado` | timestamptz | no | Alta del formato |
+| `actualizado` | timestamptz | no | Última modificación |
+
+Restricciones: único por `(nombre, periodicidad)` y único por `clave`.
+
 ---
 
 ## 3. Estructuras JSON
@@ -205,19 +240,21 @@ Ejemplo para hidrantes interiores en el ciclo 2026-08:
     { "id": "valvula_aerea_abierta", "etiqueta": "Válvula aérea abierta",           "tipo": "si_no", "requerido": true },
     { "id": "gabinete_buen_estado",  "etiqueta": "Gabinete en buen estado",         "tipo": "si_no", "requerido": true },
     { "id": "manguera_piton",        "etiqueta": "Manguera y pitón en buen estado", "tipo": "si_no", "requerido": true },
-    { "id": "pintura",               "etiqueta": "Pintura",                         "tipo": "si_no", "requerido": true },
-    { "id": "observaciones",         "etiqueta": "Observaciones",                   "tipo": "texto", "requerido": false }
+    { "id": "pintura",               "etiqueta": "Pintura",                         "tipo": "si_no", "requerido": true }
   ],
   "texto_libre": ["como_se_encontro", "que_se_realizo", "pendientes"]
 }
 ```
 
+`Observaciones` ya no es un punto de la plantilla: es columna fija del documento RAG en los cinco
+formatos (ver §2.8 y docs/decisiones.md D-15), así que no se declara aquí.
+
 Tipos admitidos en `puntos`:
 
 | Tipo | Captura | Valor almacenado |
 |---|---|---|
-| `si_no` | Dos botones | `"SI"` / `"NO"` |
-| `si_no_na` | Tres botones | `"SI"` / `"NO"` / `"NA"` |
+| `si_no` | Dos botones | `true` (SI) / `false` (NO) |
+| `si_no_na` | Tres botones | `true` (SI) / `false` (NO) / `null` (NA) |
 | `texto` | Campo de texto | Cadena |
 | `numero` | Campo numérico | Número |
 | `seleccion` | Lista; requiere `opciones` | Cadena de la lista |
@@ -235,22 +272,67 @@ tocar código:
 
 ### 3.3 `registros.valores`
 
-Objeto plano cuyas llaves son los `id` de los puntos de la plantilla vigente:
+Objeto plano cuyas llaves son los `id` de los puntos de la plantilla vigente. Los puntos `si_no` y
+`si_no_na` se guardan como **booleano** (o `null` para NA), no como texto — separar el dato de su
+presentación es lo que permite contar, promediar y comparar puntos entre formatos sin normalizar
+cadenas primero (ver docs/decisiones.md D-15).
 
 ```jsonc
 {
-  "valvula_aerea_abierta": "SI",
-  "gabinete_buen_estado":  "NO",
-  "manguera_piton":        "SI",
-  "pintura":               "SI",
-  "observaciones":         "Gabinete con cristal estrellado, se reporta a proveedor"
+  "valvula_aerea_abierta": true,
+  "gabinete_buen_estado":  false,
+  "manguera_piton":        true,
+  "pintura":               true
 }
 ```
+
+**`false` no es "sin contestar".** Es una respuesta válida (NO) y debe distinguirse de la llave
+ausente, que sí significa que el punto no se contestó. `calcularEstado()` (§4) comprueba **presencia
+de la llave**, nunca la veracidad del valor — si comprobara veracidad, un elemento con todos sus
+puntos en NO se quedaría en `parcial` para siempre.
 
 Si un punto desaparece de la plantilla, su valor permanece almacenado pero deja de mostrarse y de
 contar para el estado. No se borra: es información capturada en campo.
 
-### 3.4 Formato de intercambio del catálogo
+### 3.4 El encabezado y el cierre del documento: global + particular
+
+`DocumentoRAG.encabezado` y `.cierre` (lo que de verdad consume `render.ts`) se arman en
+`armarDocumentoRAG()` mezclando dos fuentes — ver docs/decisiones.md D-15 §7.1:
+
+```jsonc
+// Global — web/lib/rag/constantes.ts, igual en los cinco formatos mensuales.
+// No hay manera de que un formato lo traiga distinto: no es un dato, es código.
+{
+  "CLASIFICACION": "INTERNAL",
+  "RAZON_SOCIAL": "Volkswagen de México S.A. de C.V.",
+  "DOMICILIO": ["Calle Mineral de Valenciana 611, Puerto Interior", "Silao Guanajuato, México."],
+  "INSTRUCCION_GENERAL": "Marque SI o NO en cada punto de revisión según el estado del elemento. ...",
+  "CIERRE_ESTANDAR": {
+    "repetir": true,
+    "campos": [
+      { "id": "realizo",      "etiqueta": "Realizó (nombre, grupo y firma)",              "tipo": "firma" },
+      { "id": "fecha",        "etiqueta": "Fecha",                                        "tipo": "fecha" },
+      { "id": "coordinador",  "etiqueta": "Coordinador de Soporte de PCI (nombre y firma)", "tipo": "firma" }
+    ]
+  }
+}
+
+// Particular — fila de `formatos` (§2.8), distinto por documento.
+{
+  "documento_referencia": "I1.15M2_4037-002",
+  "revision": "5",
+  "instrucciones": ["Tipo de hidrante: P = Pie, G = Gabinete."]
+}
+```
+
+`documento_referencia` y `revision` van al **pie** del documento, no al encabezado — como en los RAG
+de origen. Las `instrucciones` particulares se concatenan **después** de `INSTRUCCION_GENERAL` al
+generar. `cierre.repetir` decide si el bloque de firmas aparece en cada página del documento o sólo al
+final del documento completo; siendo global hoy siempre es `true`, pero queda como campo —no una
+constante suelta— para que un formato de otra periodicidad lo pueda resolver distinto más adelante sin
+tocar los mensuales.
+
+### 3.5 Formato de intercambio del catálogo
 
 Lo que se importa y exporta desde la pantalla de catálogo:
 
@@ -263,7 +345,10 @@ Lo que se importa y exporta desde la pantalla de catálogo:
       "sistema": "botones_avisadores",
       "nombre": "ELEM. 101",
       "zona": "Zona 1 · Nave producción",
-      "ubicacion": "G 2 - 0.1 Planta alta",
+      "ubicacion": "G01-02",
+      "referencia": "Planta alta",
+      "seccion": "Zona 1 · Nave producción",
+      "orden_seccion": 1,
       "tipo": "HMS-D",
       "responsable": "Benjamín",
       "item_rag": 1,
@@ -290,7 +375,9 @@ completo   ⟺  para cada bloque de fotos con requerido = true:
               Y para cada campo en texto_libre:
                   el texto no está vacío
               Y para cada punto con requerido = true:
-                  valores[punto.id] existe y no está vacío
+                  si tipo ∈ {si_no, si_no_na}: la llave punto.id existe en valores
+                    (false / NO cuenta como contestado; sólo la ausencia de la llave falta)
+                  si no: valores[punto.id] existe y no está vacío
 
 sin_iniciar ⟺  no hay renglón en registros,
               o el renglón no tiene fotos ni textos ni valores

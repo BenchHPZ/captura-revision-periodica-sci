@@ -5,6 +5,13 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { DEPOSITO } from "@/lib/datos";
 import { aseguraRegistro, plantillaDe, recalcularYGuardarEstado } from "@/lib/registros";
+import type { ValorPunto } from "@/lib/tipos";
+
+/** Inverso de codificarSiNo() en Formulario.tsx. */
+function decodificarSiNo(valorForm: FormDataEntryValue): boolean | null {
+  const texto = String(valorForm);
+  return texto === "na" ? null : texto === "true";
+}
 
 export interface EntradaFoto {
   elementoId: string;
@@ -96,14 +103,25 @@ export async function guardarYSiguiente(ids: IdsElemento, formData: FormData) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // Se necesita antes de parsear FormData: decide cómo decodificar cada
+  // 'valores.<id>' según el tipo del punto en la plantilla vigente.
+  const plantilla = await plantillaDe(supabase, ids.cicloId, ids.sistemaId);
+  const tipoPorPunto = new Map(plantilla.puntos.map((p) => [p.id, p.tipo]));
+
   const comoSeEncontro = String(formData.get("como_se_encontro") ?? "");
   const queSeRealizo = String(formData.get("que_se_realizo") ?? "");
   const pendientes = String(formData.get("pendientes") ?? "");
-  const valores: Record<string, string> = {};
+  const valores: Record<string, ValorPunto> = {};
   for (const [clave, valor] of formData.entries()) {
-    if (clave.startsWith("valores.")) {
-      valores[clave.slice("valores.".length)] = String(valor);
-    }
+    if (!clave.startsWith("valores.")) continue;
+    const id = clave.slice("valores.".length);
+    const tipo = tipoPorPunto.get(id);
+    // Los puntos si_no/si_no_na llegan codificados como "true"/"false"/"na"
+    // (ver codificarSiNo en Formulario.tsx) porque FormData sólo transporta
+    // cadenas. El resto conserva su forma de texto, igual que antes. El
+    // formulario ya omite el <input hidden> de un si_no sin contestar, así
+    // que si la llave llega aquí es porque sí se contestó.
+    valores[id] = tipo === "si_no" || tipo === "si_no_na" ? decodificarSiNo(valor) : String(valor);
   }
 
   const registroId = await aseguraRegistro(supabase, ids.elementoId);
@@ -120,7 +138,6 @@ export async function guardarYSiguiente(ids: IdsElemento, formData: FormData) {
     .eq("id", registroId);
   if (error) throw error;
 
-  const plantilla = await plantillaDe(supabase, ids.cicloId, ids.sistemaId);
   await recalcularYGuardarEstado(supabase, registroId, plantilla);
   revalidatePath("/capturar", "layout");
   revalidatePath("/recepcion");

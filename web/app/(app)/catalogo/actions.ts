@@ -10,6 +10,9 @@ export interface ElementoImportado {
   nombre: string;
   zona?: string | null;
   ubicacion?: string | null;
+  referencia?: string | null;
+  seccion?: string | null;
+  orden_seccion?: number | null;
   tipo?: string | null;
   responsable?: string | null;
   item_rag?: number | null;
@@ -94,6 +97,9 @@ async function reconciliar(
         nombre: importado.nombre,
         zona: importado.zona ?? null,
         ubicacion: importado.ubicacion ?? null,
+        referencia: importado.referencia ?? null,
+        seccion: importado.seccion ?? null,
+        orden_seccion: importado.orden_seccion ?? null,
         tipo: importado.tipo ?? null,
         responsable: importado.responsable ?? null,
         item_rag: importado.item_rag ?? null,

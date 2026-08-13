@@ -36,6 +36,31 @@ export interface Sistema {
   activo: boolean;
 }
 
+/** La identidad de un RAG: lo que es particular de ese documento y no
+ * cambia entre ciclos. Se identifica por (nombre, periodicidad), no por
+ * ciclo — ver docs/modelo-de-datos.md §2.8. Lo que sí cambia mes a mes
+ * (los puntos de revisión) sigue viviendo en Plantilla.
+ *
+ * Lo que debe ser idéntico en los cinco formatos mensuales —
+ * clasificación, razón social, domicilio, instrucción general, bloque de
+ * cierre— NO está aquí: vive como constantes en web/lib/rag/constantes.ts,
+ * precisamente para que no haya manera de que un formato lo tenga
+ * distinto a los demás (ver docs/decisiones.md D-15 §7.1). `instrucciones`
+ * en esta tabla son sólo las PROPIAS de este formato (p. ej. "P = Pie, G
+ * = Gabinete"); se concatenan con la general al armar el documento. */
+export interface Formato {
+  id: string;
+  clave: string;
+  nombre: string;
+  periodicidad: string;
+  sistema_id: string | null;
+  /** Va al pie del documento, junto con `revision` — no al encabezado. */
+  documento_referencia: string;
+  revision: string | null;
+  instrucciones: string[];
+  notas: string | null;
+}
+
 export interface CicloFechas {
   ejecucion_inicio?: string;
   ejecucion_fin?: string;
@@ -74,15 +99,32 @@ export interface Elemento {
   orden: number;
   activo: boolean;
   notas: string | null;
+  /** Ayuda corta a la ubicación, ≤5 palabras — ver docs/modelo-de-datos.md §2.4. */
+  referencia: string | null;
+  /** Agrupador del documento RAG. Campo propio del catálogo, no derivado
+   * de zona ni de ubicacion (ver docs/decisiones.md D-15). */
+  seccion: string | null;
+  orden_seccion: number | null;
 }
+
+/**
+ * Valor de un punto de revisión ya capturado. Los puntos si_no/si_no_na se
+ * guardan como boolean (true=SI, false=NO, null=NA); el resto conserva su
+ * forma natural. Ver docs/modelo-de-datos.md §3.3 y docs/decisiones.md D-15
+ * — la llave ausente sigue significando "sin contestar", no el valor null.
+ */
+export type ValorPunto = boolean | string | number | null;
 
 export interface Registro {
   id: string;
   elemento_id: string;
   como_se_encontro: string | null;
   que_se_realizo: string | null;
+  /** Alimenta la columna Observaciones del documento RAG — ver
+   * docs/decisiones.md D-15 §7.2. No hay una columna 'observaciones'
+   * aparte: éste es el único campo de texto libre que la sustituye. */
   pendientes: string | null;
-  valores: Record<string, string>;
+  valores: Record<string, ValorPunto>;
   estado: Estado;
   capturado_por: string | null;
   creado: string;
