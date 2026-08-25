@@ -196,6 +196,54 @@ export async function obtenerElementosParaImpacto(
   });
 }
 
+export interface ElementoParaInforme {
+  id: string;
+  codigo: string;
+  nombre: string;
+  ubicacion: string | null;
+  referencia: string | null;
+  zona: string | null;
+  tipo: string | null;
+  responsable: string | null;
+  seccion: string | null;
+  orden_seccion: number | null;
+  orden: number;
+  registro: {
+    id: string;
+    como_se_encontro: string | null;
+    que_se_realizo: string | null;
+    pendientes: string | null;
+    valores: Record<string, ValorPunto>;
+    fotos: { id: string; momento: string; ruta: string; orden: number }[];
+  } | null;
+}
+
+/** Para el informe fotográfico mensual (Fase 6): trae de cada elemento
+ * activo lo mismo que obtenerElementosParaRag usa para ubicarlo en su
+ * sección, más lo que el informe necesita y el RAG no — código (para la
+ * ruta de Storage de sus fotos), los tres textos y las fotos mismas. */
+export async function obtenerElementosParaInforme(
+  supabase: SupabaseClient,
+  cicloId: string,
+  sistemaId: string,
+): Promise<ElementoParaInforme[]> {
+  const { data, error } = await supabase
+    .from("elementos")
+    .select(
+      "id, codigo, nombre, ubicacion, referencia, zona, tipo, responsable, seccion, orden_seccion, orden, registro:registros(id, como_se_encontro, que_se_realizo, pendientes, valores, fotos(id, momento, ruta, orden))",
+    )
+    .eq("ciclo_id", cicloId)
+    .eq("sistema_id", sistemaId)
+    .eq("activo", true)
+    .order("orden");
+  if (error) throw error;
+
+  return (data ?? []).map((fila) => {
+    const registro = Array.isArray(fila.registro) ? (fila.registro[0] ?? null) : fila.registro;
+    return { ...fila, registro };
+  }) as ElementoParaInforme[];
+}
+
 export async function obtenerPlantilla(
   supabase: SupabaseClient,
   cicloId: string,

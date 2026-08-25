@@ -77,19 +77,26 @@ responsable, y desaparece la ambigüedad al clasificar evidencia.
 
 ## D-04 · El informe se genera desde el equipo local
 
-**Estado:** vigente
+**Estado:** revisada — ver D-17
 
 **Contexto.** La presentación mensual se arma sobre la plantilla corporativa `Reporte sistemas -
 MASTER.pptx`, con las fuentes institucionales instaladas en el equipo, y se revisa abriéndola en
 PowerPoint antes de entregarla.
 
-**Decisión.** La captura y el seguimiento viven en la nube; la generación del informe es un programa
-que se ejecuta en el equipo del encargado, lee los datos del ciclo y deposita el archivo resultante
-en la carpeta de trabajo.
+**Decisión original.** La captura y el seguimiento viven en la nube; la generación del informe es un
+programa que se ejecuta en el equipo del encargado, lee los datos del ciclo y deposita el archivo
+resultante en la carpeta de trabajo.
 
 **Consecuencias.** Hay dos piezas que mantener en lugar de una. A cambio, el informe se produce con
 la plantilla y la tipografía correctas, se puede revisar antes de entregarlo, y la nube no necesita
 cargar con dependencias de ofimática.
+
+**Por qué se revisó.** Al retomar esta fase se pidió explícitamente que el informe también corriera
+desde el servidor, con un botón en la propia aplicación — no sólo desde el equipo local. D-17 explica
+cómo: `python-pptx` no tiene equivalente directo en el entorno de Node de Vercel, así que el
+generador se reescribió en TypeScript. La revisión abierta antes de entregar (razón de fondo de esta
+decisión) se conserva igual: el archivo generado se descarga y se revisa en PowerPoint antes de
+enviarlo, sólo que ya no hace falta estar frente al equipo que lo generó.
 
 ---
 
@@ -492,3 +499,81 @@ caso de uso real de esta pantalla, sólo un riesgo a evitar.
 concreto —exportar 221 elementos, editar sólo botones avisadores, reimportar— bastó para ver que una
 conciliación global habría desactivado hidrantes interiores, exteriores y ambas redes de válvulas sin
 que el archivo dijera nada sobre ellos.
+
+---
+
+## D-17 · El informe fotográfico se genera en el servidor, en TypeScript
+
+**Estado:** vigente
+
+**Contexto.** D-04 fijó el generador como un programa local en Python porque necesitaba la plantilla
+corporativa, las fuentes institucionales y PowerPoint para revisar el resultado antes de entregarlo.
+Al retomar esta fase se pidió que también corriera desde el servidor, disparado con un botón en la
+propia aplicación — no como alternativa al camino local, sino en vez de él.
+
+**Decisión.** El generador vive en `web/lib/informe/` y corre como una acción de servidor de Next.js
+(`/informe`), con la sesión normal del usuario — nunca la llave de servicio, que sigue reservada a
+las utilerías locales (ver README § Variables de entorno). `python-pptx` no tiene equivalente en el
+entorno de Node de Vercel, así que el generador se escribió de nuevo, no se migró:
+
+- **`pptx-automizer`** abre la plantilla corporativa real (`Reporte sistemas - MASTER.pptx`, subida al
+  depósito bajo `_plantillas/`) y clona su diapositiva `Elemento` una vez por elemento activo — es la
+  única librería de Node encontrada que trabaja sobre un `.pptx` existente en vez de construir uno
+  desde cero (`pptxgenjs` a solas no puede abrir una plantilla ya hecha).
+- **El contenido de cada diapositiva se agrega, no se modifica.** Los placeholders de la diapositiva
+  de referencia están vacíos —nunca se escribió nada en ellos dentro de PowerPoint—, y las funciones
+  de `pptx-automizer` para modificar un elemento existente (`modify.setText`,
+  `ModifyImageHelper.setRelationTarget`) sólo saben reemplazar contenido que ya está ahí: sobre un
+  placeholder vacío no hacen nada, sin avisar. La única vía que sí funciona sobre un placeholder vacío
+  es `slide.generate()`, el atajo de `pptx-automizer` hacia `pptxgenjs` puro — así que título, la
+  línea de metadatos, los tres textos, el collage y la tabla de puntos de revisión se agregan como
+  elementos nuevos, posicionados con las coordenadas exactas de cada placeholder (medidas una sola vez
+  con `python-pptx` sobre la plantilla real, ver `web/lib/informe/geometria.ts`) en vez de intentar
+  llenar el placeholder que ocupa ese lugar.
+- **`sharp`** arma el collage fotográfico — mismo criterio de acomodo según cantidad y orientación que
+  `generar_collage()` en `reporte.py` (Marzo, Drive), portado a mano porque ese script vive fuera del
+  repositorio (D-11) y no porque la lógica cambiara.
+- El documento RAG y el informe comparten la misma regla de agrupación por sección
+  (`agruparPorSeccion`, exportada de `web/lib/rag/documento.ts` y reutilizada tal cual, no
+  reimplementada) para que un mismo elemento caiga en el mismo lugar relativo en los dos.
+- **Riesgo aceptado, no resuelto:** `image-size` —dependencia transitiva de `pptxgenjs`— tiene una
+  vulnerabilidad de denegación de servicio (`GHSA-w3rx-r6r6-pgpr`) sin versión corregida todavía en
+  ninguna versión publicada. Se acepta para este piloto porque el generador sólo procesa fotografías
+  que la propia aplicación subió como JPEG (nunca un archivo arbitrario de un tercero) — revisar antes
+  de dar de alta a más especialistas o de ampliar qué archivos puede procesar este camino.
+
+**Cómo se detectó y resolvió el problema de tiempo de ejecución.** La primera versión, verificada
+contra el ciclo real de agosto (224 elementos activos, 141 registros y 445 fotografías ya capturadas
+en ese momento), tardó más de diez minutos — muy por encima de cualquier límite razonable de una
+función serverless. Se investigó por partes, no se aceptó el número tal cual:
+
+1. Una plantilla creada sin `removeExistingSlides: true` conserva las 18 diapositivas de muestra de
+   MASTER (guías de color, iconos, portadas) y las vuelve a escribir en cada `write()` junto con las
+   generadas. Activar esa opción, sin tocar nada más, bajó una prueba sintética de 221 diapositivas de
+   más de diez minutos a **3 segundos**.
+2. Aun así, la corrida real seguía tardando varios minutos. Instrumentar el tiempo por sistema mostró
+   que no era proporcional ni a la cantidad de elementos ni a la de puntos de revisión, sino que
+   coincidía con los dos sistemas de captura directa —los únicos con fotografías y registros reales
+   capturados hasta ese momento—: el tiempo restante es descarga de fotografías del depósito y
+   composición del collage, trabajo real y proporcional a la evidencia ya levantada, no una falla.
+3. El generador arma un `.pptx` **por sistema**, en una instancia de `pptx-automizer` propia para cada
+   uno, y los combina al final en una pasada aparte que sólo clona diapositivas ya armadas (sin volver
+   a llamar `slide.generate()`). Contra datos sintéticos sin fotografías, cinco tandas de tamaño real
+   más la combinación final corrieron en su conjunto por debajo de los 15 segundos, así que cualquier
+   comportamiento del lado de `pptx-automizer` que empeore con la cantidad de diapositivas acumuladas
+   en una sola instancia queda acotado al tamaño de un sistema, no al ciclo completo. Las descargas de
+   fotografías de un mismo elemento, antes secuenciales, pasaron a pedirse en paralelo.
+
+**Consecuencias.** El tiempo de generación crece con la evidencia ya capturada, no con el tamaño del
+catálogo — así que seguirá subiendo según avance el ciclo piloto. `web/app/(app)/informe/page.tsx`
+fija `maxDuration = 300` como margen; si el ciclo completo con las fotografías de los 221 elementos
+lo rebasa, hay que medirlo contra datos reales y, si hace falta, subir el límite (Vercel Pro con
+Fluid Compute permite hasta 800s) o exponer el mismo armado por sistema como pasos separados en la
+interfaz en vez de un solo botón para el ciclo entero.
+
+**Alternativa descartada.** Copiar el patrón de `/rag` (HTML autocontenido + "Imprimir" del navegador,
+ver D-16). Se descartó porque el documento es de otra naturaleza: `generar_collage()` maqueta
+imágenes con cinco acomodos distintos según cantidad y orientación, algo que CSS de impresión no
+resuelve sin escribir un motor de maquetación de imágenes propio —justo lo contrario del caso RAG,
+donde una tabla con `<thead>/<tfoot>` resuelve la paginación de forma nativa—, y D-04 exige revisar el
+resultado abierto en PowerPoint antes de entregarlo, no sólo poder verlo.

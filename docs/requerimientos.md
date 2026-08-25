@@ -138,8 +138,8 @@ supervisión por coordinación de turno del 21 al 30.
 | RO-01 | Uso desde teléfono personal con datos móviles, dentro de la planta, sin depender de la red corporativa ni de una VPN |
 | RO-02 | Uso desde computadora en la red de VW para las tareas de recepción y seguimiento |
 | RO-03 | Operación por una sola persona en el ciclo piloto, sin apoyo técnico durante la ejecución |
-| RO-04 | La generación del informe mensual en PowerPoint se ejecuta desde el equipo local, con la plantilla corporativa y las fuentes institucionales instaladas |
-| RO-05 | Los productos operativos —catálogo exportado, resultados exportados e informe— se depositan en la carpeta de trabajo en Google Drive |
+| RO-04 | La generación del informe mensual en PowerPoint se dispara desde la aplicación; el resultado se revisa abriéndolo en PowerPoint, con la plantilla corporativa y las fuentes institucionales instaladas, antes de entregarlo (ver docs/decisiones.md D-04, revisada en D-17) |
+| RO-05 | Los productos operativos —catálogo exportado, resultados exportados e informe— se descargan desde la aplicación y se depositan a mano en la carpeta de trabajo en Google Drive |
 
 ## 7. Requerimientos no funcionales
 

@@ -51,7 +51,7 @@ function formatearFecha(iso: string): string {
  * capturan como booleano (true/false/null); los capturados antes de ese
  * cambio quedaron como texto "SI"/"NO"/"NA" en registros ya reales — se
  * siguen leyendo igual, no se migran. */
-function respuestaDe(valor: ValorPunto | undefined): "SI" | "NO" | "NA" | undefined {
+export function respuestaDe(valor: ValorPunto | undefined): "SI" | "NO" | "NA" | undefined {
   if (valor === true || valor === "SI") return "SI";
   if (valor === false || valor === "NO") return "NO";
   if (valor === null || valor === "NA") return "NA";

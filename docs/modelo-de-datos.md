@@ -402,8 +402,14 @@ docs/decisiones.md D-06).
 |---|---|
 | Fotografía asignada | `{ciclo}/{sistema}/{codigo}/{momento}_{NN}.jpg` |
 | Fotografía sin clasificar | `{ciclo}/_entrada/{uuid}.jpg` |
+| Plantilla corporativa del informe | `_plantillas/Reporte sistemas - MASTER.pptx` |
+| Informe fotográfico generado | `{ciclo}/_informe/Informe_Reporte_{cicloNombre}.pptx` |
 
 Ejemplo: `2026-08/hidrantes_interiores/HI-024/antes_01.jpg`
+
+La plantilla no depende de ningún ciclo — vive fuera de cualquier prefijo `{ciclo}`, igual que
+`_entrada` vive dentro de uno. Se sube una sola vez con `subir-plantilla-informe.ts` (ver
+docs/decisiones.md D-17).
 
 Las imágenes se reducen en el navegador antes de subirse: lado mayor 2560 px, JPEG calidad 88, con
 la orientación EXIF ya aplicada al píxel. Una fotografía de teléfono pasa de unos 4 MB a entre 800 KB

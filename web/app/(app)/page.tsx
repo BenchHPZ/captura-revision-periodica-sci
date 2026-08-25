@@ -65,6 +65,16 @@ export default async function InicioPage() {
           Ver, imprimir y descargar los cinco formatos estandarizados, en blanco o con lo capturado.
         </p>
       </Link>
+
+      <Link
+        href="/informe"
+        className="block border border-vw-dsb-20 p-4 transition hover:border-vw-vivid-green"
+      >
+        <span className="font-medium text-vw-deep-space">Informe fotográfico</span>
+        <p className="mt-1 text-sm text-vw-dsb-60">
+          Genera la presentación mensual con el collage y los hallazgos de cada elemento.
+        </p>
+      </Link>
     </div>
   );
 }

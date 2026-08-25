@@ -68,7 +68,7 @@ export interface EntradaDocumentoRAG {
  * ninguno de sus elementos no se pierde: queda al final, ordenada por
  * nombre.
  */
-function agruparPorSeccion(elementos: ElementoParaDocumento[]): [string, ElementoParaDocumento[]][] {
+export function agruparPorSeccion(elementos: ElementoParaDocumento[]): [string, ElementoParaDocumento[]][] {
   const ordenPorNombre = new Map<string, number | null>();
   const elementosPorNombre = new Map<string, ElementoParaDocumento[]>();
 

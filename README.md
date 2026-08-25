@@ -30,7 +30,8 @@ como los puntos a supervisar se puedan modificar durante la ejecución sin inter
   lo que se recibe de terceros.
 - **Catálogo configurable**: los elementos y los puntos a supervisar se editan durante la ejecución
   y se importan y exportan en JSON.
-- **Generación del informe** mensual en PowerPoint a partir de lo capturado.
+- **Generación del informe** fotográfico mensual en PowerPoint, con un botón desde la propia
+  aplicación, a partir de lo capturado.
 
 ## Cómo está armado
 
@@ -40,28 +41,26 @@ flowchart TD
     N["Next.js en Vercel<br/>páginas y acciones de servidor"]
     subgraph S["Supabase"]
         DB[("PostgreSQL<br/>configuración, catálogo, resultados")]
-        ST[("Storage<br/>fotografías, depósito privado")]
+        ST[("Storage<br/>fotografías y plantilla, depósito privado")]
         AU["Auth · sesión"]
     end
-    L["Equipo local<br/>generar_reporte.py"]
-    F["Informe_&lt;Mes&gt;.pptx"]
 
     U -- páginas, formularios --> N
     N -- lee y escribe --> DB
     N -- valida sesión --> AU
     U -- "fotografías, subida directa (D-06)" --> ST
     N -.->|"URL firmada para mostrarlas"| ST
-
-    L -- lee el ciclo --> DB
-    L -- "al cierre del ciclo" --> F
+    N -- "informe: arma el .pptx en el servidor (D-17)" --> ST
 ```
 
-La captura y el seguimiento viven en la nube para poder usarse desde teléfono personal dentro de la
-planta, sin depender de la red corporativa. Las fotografías van del navegador directo a Storage —
-Next.js nunca las recibe, sólo registra la ruta resultante y firma URL de lectura corta para
-mostrarlas (D-06). La generación del informe se ejecuta en el equipo local porque necesita la
-plantilla corporativa, las fuentes institucionales y PowerPoint para verificar el resultado. El
-porqué de cada pieza está en [`docs/decisiones.md`](docs/decisiones.md).
+La captura, el seguimiento y la generación del informe viven todos en la nube, para poder usarse
+desde teléfono personal dentro de la planta sin depender de la red corporativa. Las fotografías van
+del navegador directo a Storage — Next.js nunca las recibe, sólo registra la ruta resultante y firma
+URL de lectura corta para mostrarlas (D-06). El informe se arma también en el servidor: descarga la
+plantilla corporativa y las fotografías necesarias desde Storage, arma el `.pptx` con `pptx-automizer`
+y `sharp`, lo deja guardado en el depósito y ofrece una URL firmada para bajarlo — la revisión final
+sigue siendo abrirlo en PowerPoint, sólo que ya no hace falta estar frente al equipo que lo generó
+(D-04, revisada en D-17). El porqué de cada pieza está en [`docs/decisiones.md`](docs/decisiones.md).
 
 ## Estructura del repositorio
 
@@ -84,8 +83,9 @@ captura-sci/
 │   │       ├── tablero/              Fase 4 — Tablero.tsx: avance, ritmo, tabla y exportación
 │   │       ├── catalogo/             Fase 5 — sistemas, importar/exportar catálogo
 │   │       │   └── [sistema]/        PlantillaEditor.tsx + ElementosCatalogo.tsx (cliente)
-│   │       └── rag/                  Formatos RAG estandarizados (D-15/D-16) — lista y visor
-│   │           └── [formato]/        VisorRAG.tsx: ver, alternar vacío/lleno, imprimir · FormatoEditor.tsx
+│   │       ├── rag/                  Formatos RAG estandarizados (D-15/D-16) — lista y visor
+│   │       │   └── [formato]/        VisorRAG.tsx: ver, alternar vacío/lleno, imprimir · FormatoEditor.tsx
+│   │       └── informe/              Fase 6 (D-17) — botón, genera el .pptx en el servidor
 │   ├── components/EstadoBadge.tsx
 │   └── lib/
 │       ├── supabase/                 clientes de navegador, servidor y proxy
@@ -96,15 +96,15 @@ captura-sci/
 │       ├── imagen.ts                 reducción a 2560px/calidad 88 con orientación EXIF
 │       ├── descargas.ts              descargar() — genera y dispara un archivo en el navegador
 │       ├── rutas.ts, texto.ts        rutas de Storage; búsqueda sin acentos
-│       └── rag/                      documento.ts + render.ts + estilos.ts — puros, sin Next/Supabase/React
-│                                      (ver docs/decisiones.md D-16: pensados para una segunda entrada local)
+│       ├── rag/                      documento.ts + render.ts + estilos.ts — puros, sin Next/Supabase/React
+│       │                             (ver docs/decisiones.md D-16: pensados para una segunda entrada local)
+│       └── informe/                  collage.ts (sharp) + geometria.ts + generador.ts (pptx-automizer)
 ├── supabase/
 │   ├── migrations/                   0001 esquema · 0002 sistemas fijos · 0003 RLS · 0004 Storage · 0005 formatos RAG
 │   └── seed/                         catálogo, plantillas y formatos ya extraídos, por ciclo
 └── scripts/                          utilerías en Python (requirements.txt)
     ├── extraer_rags.py               RAG en PDF → supabase/seed/{catalogo,plantillas}_<ciclo>.json
-    ├── cargar_catalogo.py            ese JSON → Supabase (valida en seco sin --confirmar)
-    └── generar_reporte.py            Supabase → informe mensual en PowerPoint (fase 6, aún no escrito)
+    └── cargar_catalogo.py            ese JSON → Supabase (valida en seco sin --confirmar)
 ```
 
 El repositorio vive **fuera** de la carpeta sincronizada de Google Drive. En la carpeta de trabajo se
@@ -132,7 +132,9 @@ Quien se incorpore al proyecto debería leer, en orden: requerimientos, flujos y
 | Cuenta de Vercel | Plan gratuito |
 
 Dependencias de Python para las utilerías, fijadas en [`scripts/requirements.txt`](scripts/requirements.txt):
-`pypdf`, `Pillow`, `python-pptx`, `supabase`, `python-dotenv`.
+`pypdf`, `supabase`, `python-dotenv`. El informe fotográfico ya no es una utilería de Python — se
+genera en el servidor (ver D-17); sus dependencias (`pptx-automizer`, `sharp`) están en
+`web/package.json`, como el resto de la aplicación.
 
 ## Arranque local
 
@@ -157,14 +159,18 @@ npx --prefix web supabase db push
 # 5. Formatos RAG: una sola vez, no depende de ningún ciclo (ver D-15)
 cd web && npx tsx scripts/cargar-formatos.ts                 # valida y resume; nada se escribe todavía
 npx tsx scripts/cargar-formatos.ts --confirmar
+
+# 6. Plantilla del informe: una sola vez, no depende de ningún ciclo (ver D-17)
+npx tsx scripts/subir-plantilla-informe.ts --archivo "<ruta a Reporte sistemas - MASTER.pptx>"
+npx tsx scripts/subir-plantilla-informe.ts --archivo "<ruta al .pptx>" --confirmar
 cd ..
 
-# 6. Catálogo del ciclo: extraer de los RAG y cargar a Supabase
+# 7. Catálogo del ciclo: extraer de los RAG y cargar a Supabase
 python scripts/extraer_rags.py --formatos "<ruta a Formatos de soporte>" --ciclo 2026-08
 python scripts/cargar_catalogo.py --ciclo 2026-08        # valida y resume; nada se escribe todavía
 python scripts/cargar_catalogo.py --ciclo 2026-08 --confirmar
 
-# 7. Servidor de desarrollo
+# 8. Servidor de desarrollo
 cd web && npm run dev
 ```
 
@@ -179,7 +185,7 @@ antes de correr `cargar_catalogo.py --confirmar`.
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Navegador y servidor | Dirección del proyecto de Supabase |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Navegador y servidor | Llave pública; opera bajo las políticas de seguridad por renglón |
-| `SUPABASE_SERVICE_ROLE_KEY` | Sólo utilerías locales | Llave privilegiada para la carga inicial y el generador de informe. **No se publica ni se incluye en la aplicación** |
+| `SUPABASE_SERVICE_ROLE_KEY` | Sólo utilerías locales | Llave privilegiada para la carga inicial del catálogo y de la plantilla del informe. **No se publica ni se incluye en la aplicación** — el informe en sí corre con la sesión normal del usuario, ver D-17 |
 
 Las dos primeras se configuran también en Vercel. La tercera se queda en el equipo local, en un
 archivo `.env` que no se versiona.
@@ -193,9 +199,9 @@ archivo `.env` que no se versiona.
 | `npm run lint` | Revisión de estilo (`eslint .`; `next lint` ya no existe desde Next 16) |
 | `npx supabase db push` | Aplica las migraciones pendientes (dentro de `web/`, con el proyecto enlazado) |
 | `npx tsx scripts/cargar-formatos.ts [--confirmar]` | (dentro de `web/`) `formatos_mensuales.json` → Supabase. Una sola vez, no por ciclo. Sin `--confirmar` sólo valida |
+| `npx tsx scripts/subir-plantilla-informe.ts --archivo <ruta> [--confirmar]` | (dentro de `web/`) Sube la plantilla corporativa al depósito. Una sola vez, o cuando cambie el archivo. Sin `--confirmar` sólo valida |
 | `python scripts/extraer_rags.py --formatos <carpeta> --ciclo <AAAA-MM>` | RAG en PDF → catálogo y plantillas en JSON |
 | `python scripts/cargar_catalogo.py --ciclo <AAAA-MM> [--confirmar]` | Ese JSON → Supabase. Sin `--confirmar` sólo valida |
-| `python scripts/generar_reporte.py --ciclo 2026-08` | Arma el informe mensual en PowerPoint (fase 6, aún no escrito) |
 
 ## Despliegue
 
@@ -213,7 +219,7 @@ dependan de ellas.
 | 3 | Recepción y clasificación de evidencia externa | Código listo; falta probarlo con fotos reales |
 | 4 | Tablero de seguimiento | Código listo; falta probarlo con datos reales |
 | 5 | Editor de catálogo y de plantillas | Código listo; falta probarlo con datos reales |
-| 6 | Generador del informe mensual | Pendiente |
+| 6 | Generador del informe mensual | Código listo; falta medir el ciclo completo y probar la plantilla `MASTER` en PowerPoint |
 | 7 | Archivado del ciclo y liberación del depósito | Pendiente |
 
 Dentro de la fase 1: las migraciones, la aplicación Next.js con inicio/cierre de sesión, y los dos
@@ -288,6 +294,26 @@ se carga con `web/scripts/cargar-formatos.ts` (TypeScript, no Python: `formatos`
 ciclo, así que mezclarlo con `cargar_catalogo.py` habría confundido esa distinción) o desde el botón
 "Cargar formatos" en `/rag`; cualquiera de los dos se corre una sola vez, no por ciclo. La segunda
 entrada (un generador local para cuando D-10 lo exija) queda diseñada pero sin escribir.
+
+Dentro de la fase 6 (D-17): `/informe` genera el informe fotográfico mensual con un botón, corriendo
+en el servidor con la sesión normal del usuario — no un script local, como se planeó al principio de
+la fase, sino lo que se pidió al retomarla. Una diapositiva por elemento activo, en el orden
+sistema → sección → elemento (misma regla de agrupación que `/rag`, reutilizada tal cual), sobre la
+plantilla corporativa `Reporte sistemas - MASTER.pptx` — subida al depósito con
+`subir-plantilla-informe.ts`, no versionada en el repositorio. `pptx-automizer` clona la diapositiva
+`Elemento` de la plantilla por cada elemento y le agrega, no le modifica, el título, una línea de
+metadatos, los tres textos, el collage fotográfico y una tabla con el resultado de cada punto de
+revisión — los placeholders de la plantilla están vacíos, así que no hay nada que "reemplazar" en
+ellos; todo se agrega encima, en las mismas coordenadas, con `pptxgenjs`. El collage lo arma `sharp`,
+con el mismo criterio de acomodo que ya probó `reporte.py` (Marzo, Drive). Verificado contra el ciclo
+real de agosto (224 elementos activos, 141 registros y 445 fotografías ya capturadas en ese momento):
+la primera versión tardaba más de diez minutos; corregido a menos de dos, la mayor parte descarga de
+fotografías y composición de collages —trabajo real, proporcional a la evidencia ya levantada, no una
+falla— después de que armar el `.pptx` por sistema y combinar al final en vez de ir acumulando las
+221 diapositivas en una sola presentación bajó el resto de varios minutos a segundos. El detalle
+completo, con los tres hallazgos por separado, está en D-17. Pendiente: medir el ciclo completo con
+los 221 elementos capturados y abrir el resultado en PowerPoint para confirmar que la plantilla y las
+fuentes institucionales se ven como se espera.
 
 **Ciclo piloto:** agosto 2026. Se libera para los dos sistemas internos —54 botones avisadores y 71
 hidrantes interiores— y da seguimiento a los tres restantes mediante recepción. Los criterios con los

@@ -180,15 +180,18 @@ el estado, pero permanecen almacenados porque son información levantada en camp
 1. El encargado verifica en el tablero que no queden elementos `parcial` ni fotografías sin
    clasificar.
 2. Exporta los resultados a JSON y el detalle a CSV.
-3. Desde su equipo ejecuta el generador de informe, que lee los datos del ciclo y arma la
-   presentación mensual sobre la plantilla corporativa: una diapositiva por elemento con su collage
-   fotográfico, sus descripciones y sus puntos de revisión.
-4. Revisa la presentación y la deposita en la carpeta de trabajo junto con los formatos RAG llenados.
+3. Entra a **Informe** y pulsa *Generar informe*. La aplicación arma la presentación mensual sobre la
+   plantilla corporativa —una diapositiva por elemento con su collage fotográfico, sus descripciones y
+   sus puntos de revisión— y ofrece un enlace de descarga.
+4. Descarga el archivo, lo revisa abriéndolo en PowerPoint y lo deposita a mano en la carpeta de
+   trabajo junto con los formatos RAG llenados.
 5. Entrega a coordinación de turno para supervisión y firma.
 6. Marca el ciclo como cerrado. Queda disponible para consulta, pero ya no admite captura.
 
-El generador se ejecuta en el equipo local y no en la nube porque necesita la plantilla corporativa,
-las fuentes institucionales instaladas y PowerPoint para verificar el resultado.
+El generador corre en el servidor, con la sesión normal del encargado — no hace falta estar frente al
+equipo que lo genera. Lo que sigue siendo manual, y a propósito, es la revisión: el archivo se abre en
+PowerPoint, con la plantilla corporativa y las fuentes institucionales instaladas, antes de
+entregarlo (ver docs/decisiones.md D-17).
 
 ---
 
