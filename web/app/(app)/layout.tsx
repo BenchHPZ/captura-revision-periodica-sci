@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { NavBar } from "@/components/NavBar";
 import { signOut } from "./actions";
 
 // Todo lo que cuelga de este grupo de rutas exige sesión. Es la única
@@ -17,23 +18,28 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-white">
-      <header className="flex items-center justify-between bg-vw-deep-space px-4 py-3 text-white sm:px-6">
-        <div>
-          <p className="text-sm font-medium tracking-wide text-vw-vg-40">
-            Protección Contra Incendios
-          </p>
-          <p className="text-lg">Captura SCI</p>
+      <header className="bg-vw-deep-space text-white">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
+          <div>
+            <p className="text-sm font-medium tracking-wide text-vw-vg-40">
+              Protección Contra Incendios
+            </p>
+            <p className="text-lg">Captura SCI</p>
+          </div>
+          <form action={signOut}>
+            <button
+              type="submit"
+              className="border border-white/30 px-3 py-1.5 text-sm text-white transition hover:border-vw-vivid-green hover:text-vw-vivid-green"
+            >
+              Cerrar sesión
+            </button>
+          </form>
         </div>
-        <form action={signOut}>
-          <button
-            type="submit"
-            className="border border-white/30 px-3 py-1.5 text-sm text-white transition hover:border-vw-vivid-green hover:text-vw-vivid-green"
-          >
-            Cerrar sesión
-          </button>
-        </form>
+        <div className="border-t border-white/10 px-4 py-1.5 sm:px-6">
+          <NavBar />
+        </div>
       </header>
-      <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6">{children}</main>
+      <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6">{children}</main>
     </div>
   );
 }

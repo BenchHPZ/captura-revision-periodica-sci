@@ -4,7 +4,7 @@
 // el mismo catálogo exportado a JSON en vez de consultar la base (ver
 // docs/decisiones.md D-16). Nada en lib/rag/ debe importar "server-only",
 // "next/*" ni "react".
-import type { PuntoDef, ValorPunto } from "../tipos";
+import type { PuntoDef, TipoDiccionario, ValorPunto } from "../tipos";
 
 /** Tipo de dato de un campo del bloque de cierre (firma, fecha, texto
  * libre). No confundir con TipoPunto: el cierre no participa en
@@ -51,6 +51,10 @@ export interface RenglonRAG {
   ubicacion: string;
   /** ≤5 palabras; cadena vacía si no aplica. */
   referencia: string;
+  /** Clave del diccionario de tipos del sistema ("G"); cadena vacía si
+   * el elemento no tiene tipo o el sistema no distingue tipos — ver
+   * docs/decisiones.md D-18. */
+  tipo: string;
   /** Respuestas por id de punto. La llave ausente es "sin contestar" —
    * ver docs/modelo-de-datos.md §3.3. */
   valores: Record<string, ValorPunto>;
@@ -74,6 +78,12 @@ export interface DocumentoRAG {
   /** Columnas centrales del documento — la plantilla vigente del sistema,
    * ya sin 'observaciones' (columna fija, se maneja aparte). */
   puntos: PuntoDef[];
+  /** Qué columnas opcionales lleva este formato — ver docs/decisiones.md
+   * D-19. Id, Numeración, los puntos y Observaciones no son opcionales. */
+  columnas: { ubicacion: boolean; referencia: boolean };
+  /** Diccionario de tipos del sistema de este formato. Vacío = la columna
+   * Tipo no se dibuja — ver docs/decisiones.md D-18 y D-19. */
+  tipos: TipoDiccionario[];
   secciones: SeccionRAG[];
   totalRenglones: number;
   cicloClave: string | null;

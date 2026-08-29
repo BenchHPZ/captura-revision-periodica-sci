@@ -141,8 +141,15 @@ export const ESTILOS_RAG = /* css */ `
   .rag-celda-ubicacion {
     white-space: nowrap;
   }
+  /* Tamaño menor a propósito: es una ayuda a la ubicación, no el dato
+     principal del renglón — no compite en jerarquía con Numeración. */
   .rag-celda-referencia {
     white-space: normal;
+    font-size: 7pt;
+  }
+  .rag-celda-tipo {
+    white-space: nowrap;
+    text-align: center;
   }
   .rag-celda-obs {
     white-space: normal;
@@ -159,6 +166,7 @@ export const ESTILOS_RAG = /* css */ `
   .rag-celda-numeracion,
   .rag-celda-ubicacion,
   .rag-celda-referencia,
+  .rag-celda-tipo,
   .rag-celda-obs {
     background: var(--vw-dsb-10);
   }
@@ -166,6 +174,7 @@ export const ESTILOS_RAG = /* css */ `
   thead .rag-celda-numeracion,
   thead .rag-celda-ubicacion,
   thead .rag-celda-referencia,
+  thead .rag-celda-tipo,
   thead .rag-celda-obs {
     text-align: center;
     font-weight: 700;

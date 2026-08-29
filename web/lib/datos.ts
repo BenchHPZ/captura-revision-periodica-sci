@@ -17,9 +17,23 @@ import type {
   Registro,
   Sistema,
   ValorPunto,
+  Zona,
 } from "./tipos";
 
 export { DEPOSITO };
+
+/** La zona de un elemento, ya resuelta por el join con 'zonas' — lo
+ * mínimo que necesitan lib/rag/documento.ts y lib/informe/generador.ts
+ * para agrupar y ordenar (ver docs/decisiones.md D-18). */
+export interface ZonaResumen {
+  nombre: string;
+  orden: number;
+}
+
+function zonaResumenDe(fila: { zona: unknown }): ZonaResumen | null {
+  const cruda = Array.isArray(fila.zona) ? (fila.zona[0] ?? null) : fila.zona;
+  return cruda ? { nombre: (cruda as { nombre: string }).nombre, orden: (cruda as { orden: number }).orden } : null;
+}
 
 export async function obtenerCicloAbierto(supabase: SupabaseClient): Promise<Ciclo | null> {
   const { data, error } = await supabase
@@ -34,11 +48,32 @@ export async function obtenerCicloAbierto(supabase: SupabaseClient): Promise<Cic
 export async function obtenerSistemas(supabase: SupabaseClient): Promise<Sistema[]> {
   const { data, error } = await supabase
     .from("sistemas")
-    .select("id, clave, nombre, rag, orden, activo")
+    .select("id, clave, nombre, rag, orden, activo, tipos")
     .eq("activo", true)
     .order("orden");
   if (error) throw error;
   return (data ?? []) as Sistema[];
+}
+
+/** Para /configuracion: los cinco sistemas, activos e inactivos — a
+ * diferencia de obtenerSistemas(), que sólo trae los activos porque
+ * alimenta las pantallas de captura. */
+export async function obtenerSistemasCatalogo(supabase: SupabaseClient): Promise<Sistema[]> {
+  const { data, error } = await supabase.from("sistemas").select("id, clave, nombre, rag, orden, activo, tipos").order("orden");
+  if (error) throw error;
+  return (data ?? []) as Sistema[];
+}
+
+/** Catálogo único de la planta (docs/decisiones.md D-18), activas e
+ * inactivas — para /configuracion y para los selectores de zona de
+ * /sistemas/[clave]. */
+export async function obtenerZonas(supabase: SupabaseClient): Promise<Zona[]> {
+  const { data, error } = await supabase
+    .from("zonas")
+    .select("id, clave, nombre, descripcion, orden, activo")
+    .order("orden");
+  if (error) throw error;
+  return (data ?? []) as Zona[];
 }
 
 export interface ElementoConEstado extends Elemento {
@@ -95,7 +130,7 @@ export async function obtenerElementosCatalogo(
   const { data, error } = await supabase
     .from("elementos")
     .select(
-      "id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion",
+      "id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion, zona_id, orden_anclado",
     )
     .eq("ciclo_id", cicloId)
     .eq("sistema_id", sistemaId)
@@ -202,11 +237,10 @@ export interface ElementoParaInforme {
   nombre: string;
   ubicacion: string | null;
   referencia: string | null;
-  zona: string | null;
   tipo: string | null;
   responsable: string | null;
-  seccion: string | null;
-  orden_seccion: number | null;
+  zona: ZonaResumen | null;
+  orden_anclado: number | null;
   orden: number;
   registro: {
     id: string;
@@ -220,7 +254,7 @@ export interface ElementoParaInforme {
 
 /** Para el informe fotográfico mensual (Fase 6): trae de cada elemento
  * activo lo mismo que obtenerElementosParaRag usa para ubicarlo en su
- * sección, más lo que el informe necesita y el RAG no — código (para la
+ * zona, más lo que el informe necesita y el RAG no — código (para la
  * ruta de Storage de sus fotos), los tres textos y las fotos mismas. */
 export async function obtenerElementosParaInforme(
   supabase: SupabaseClient,
@@ -230,7 +264,7 @@ export async function obtenerElementosParaInforme(
   const { data, error } = await supabase
     .from("elementos")
     .select(
-      "id, codigo, nombre, ubicacion, referencia, zona, tipo, responsable, seccion, orden_seccion, orden, registro:registros(id, como_se_encontro, que_se_realizo, pendientes, valores, fotos(id, momento, ruta, orden))",
+      "id, codigo, nombre, ubicacion, referencia, tipo, responsable, orden_anclado, orden, zona:zonas(nombre, orden), registro:registros(id, como_se_encontro, que_se_realizo, pendientes, valores, fotos(id, momento, ruta, orden))",
     )
     .eq("ciclo_id", cicloId)
     .eq("sistema_id", sistemaId)
@@ -240,7 +274,7 @@ export async function obtenerElementosParaInforme(
 
   return (data ?? []).map((fila) => {
     const registro = Array.isArray(fila.registro) ? (fila.registro[0] ?? null) : fila.registro;
-    return { ...fila, registro };
+    return { ...fila, zona: zonaResumenDe(fila), registro };
   }) as ElementoParaInforme[];
 }
 
@@ -339,21 +373,17 @@ export async function firmarRutas(
 
 /** La identidad y la imagen de un RAG. No cuelga de ningún ciclo — ver
  * docs/modelo-de-datos.md §2.8. */
+const SELECT_FORMATO =
+  "id, clave, nombre, periodicidad, sistema_id, documento_referencia, revision, instrucciones, notas, columnas";
+
 export async function obtenerFormatos(supabase: SupabaseClient): Promise<Formato[]> {
-  const { data, error } = await supabase
-    .from("formatos")
-    .select("id, clave, nombre, periodicidad, sistema_id, documento_referencia, revision, instrucciones, notas")
-    .order("clave");
+  const { data, error } = await supabase.from("formatos").select(SELECT_FORMATO).order("clave");
   if (error) throw error;
   return (data ?? []) as Formato[];
 }
 
 export async function obtenerFormatoPorClave(supabase: SupabaseClient, clave: string): Promise<Formato | null> {
-  const { data, error } = await supabase
-    .from("formatos")
-    .select("id, clave, nombre, periodicidad, sistema_id, documento_referencia, revision, instrucciones, notas")
-    .eq("clave", clave)
-    .maybeSingle();
+  const { data, error } = await supabase.from("formatos").select(SELECT_FORMATO).eq("clave", clave).maybeSingle();
   if (error) throw error;
   return data as Formato | null;
 }
@@ -363,8 +393,9 @@ export interface ElementoParaRagFila {
   nombre: string;
   ubicacion: string | null;
   referencia: string | null;
-  seccion: string | null;
-  orden_seccion: number | null;
+  tipo: string | null;
+  zona: ZonaResumen | null;
+  orden_anclado: number | null;
   orden: number;
   /** 'pendientes' es lo que alimenta la columna Observaciones del
    * documento RAG — ver docs/decisiones.md D-15 §7.2. No hay una columna
@@ -373,7 +404,7 @@ export interface ElementoParaRagFila {
 }
 
 /** Para armar un DocumentoRAG (Fase 6): trae de cada elemento activo lo
- * que lib/rag/documento.ts necesita para ubicarlo en su sección y, si lo
+ * que lib/rag/documento.ts necesita para ubicarlo en su zona y, si lo
  * hay, lo que ya se capturó para pintarlo en modo "lleno". */
 export async function obtenerElementosParaRag(
   supabase: SupabaseClient,
@@ -383,7 +414,7 @@ export async function obtenerElementosParaRag(
   const { data, error } = await supabase
     .from("elementos")
     .select(
-      "id, nombre, ubicacion, referencia, seccion, orden_seccion, orden, registro:registros(valores, pendientes)",
+      "id, nombre, ubicacion, referencia, tipo, orden_anclado, orden, zona:zonas(nombre, orden), registro:registros(valores, pendientes)",
     )
     .eq("ciclo_id", cicloId)
     .eq("sistema_id", sistemaId)
@@ -393,6 +424,7 @@ export async function obtenerElementosParaRag(
 
   return (data ?? []).map((fila) => ({
     ...fila,
+    zona: zonaResumenDe(fila),
     registro: Array.isArray(fila.registro) ? (fila.registro[0] ?? null) : fila.registro,
   })) as ElementoParaRagFila[];
 }

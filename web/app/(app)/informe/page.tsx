@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { obtenerCicloAbierto } from "@/lib/datos";
+import { SinCiclo } from "@/components/SinCiclo";
 import { Informe } from "./Informe";
 
 // Con 221 elementos, descargar sus fotografías, armar los collages y
@@ -13,11 +14,7 @@ export default async function InformePage() {
   const ciclo = await obtenerCicloAbierto(supabase);
 
   if (!ciclo) {
-    return (
-      <div className="border border-vw-dsb-20 bg-vw-vg-10 p-4 text-sm text-vw-deep-space">
-        No hay ningún ciclo abierto todavía.
-      </div>
-    );
+    return <SinCiclo>No hay ningún ciclo abierto todavía.</SinCiclo>;
   }
 
   return <Informe ciclo={{ nombre: ciclo.nombre }} />;

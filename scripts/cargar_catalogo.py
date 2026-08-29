@@ -15,6 +15,15 @@ nuevo se da de alta, y lo que existía para ese ciclo y sistema pero ya no
 aparece en el archivo se marca activo = false (ver docs/flujos-de-usuario.md
 Flujo 5). Ningún caso borra evidencia ya capturada.
 
+ADVERTENCIA — el upsert de elementos sobrescribe TODOS sus campos con lo
+que diga este archivo, sin distinguir qué cambió: si alguien corrigió
+'zona'/'seccion'/'ubicacion'/etc. directamente en /catalogo o por SQL
+después de la última vez que se generó este JSON, --confirmar revierte
+esa corrección sin avisar (ya pasó una vez: ver docs/decisiones.md D-18).
+Antes de correr --confirmar sobre un ciclo que ya se capturó, confirmar
+que este archivo es más nuevo que cualquier edición hecha en la
+aplicación, o volver a exportar el catálogo desde /configuracion primero.
+
 Uso:
     python scripts/cargar_catalogo.py --ciclo 2026-08                    # valida y resume, no escribe
     python scripts/cargar_catalogo.py --ciclo 2026-08 --confirmar        # escribe de verdad
@@ -163,13 +172,27 @@ def main() -> int:
         ciclo_id = creado.data[0]["id"]
         print(f"  Ciclo creado (id={ciclo_id}).")
 
-    sistemas = cliente.table("sistemas").select("id, clave").execute().data
+    sistemas = cliente.table("sistemas").select("id, clave, tipos").execute().data
     sistema_id_por_clave = {s["clave"]: s["id"] for s in sistemas}
     faltan_sistemas = set(plantillas["plantillas"]) | {e["sistema"] for e in catalogo["elementos"]}
     faltan_sistemas -= set(sistema_id_por_clave)
     if faltan_sistemas:
         print(f"Estos sistemas no existen en la tabla 'sistemas' (¿faltó aplicar 0002_sistemas_seed.sql?): {faltan_sistemas}", file=sys.stderr)
         return 1
+
+    # Diccionario de tipos por sistema (docs/decisiones.md D-18):
+    # elementos.tipo guarda la CLAVE ("G"), no el nombre completo
+    # ("Gabinete") — el extractor todavía no lo sabe y sigue escribiendo
+    # el nombre completo, así que se traduce aquí antes de escribir.
+    clave_tipo_por_sistema_y_nombre = {
+        s["clave"]: {t["nombre"]: t["clave"] for t in (s.get("tipos") or [])} for s in sistemas
+    }
+
+    # Catálogo de zonas (docs/decisiones.md D-18): se resuelve por texto,
+    # con la misma forma corta que sembró la migración 0007 (seccion si
+    # está capturada, si no zona) — nunca se crea una zona nueva desde
+    # aquí, es un catálogo que administra el área desde /configuracion.
+    zona_id_por_nombre = {z["nombre"]: z["id"] for z in cliente.table("zonas").select("id, nombre").execute().data}
 
     filas_plantillas = [
         {
@@ -184,6 +207,31 @@ def main() -> int:
     cliente.table("plantillas").upsert(filas_plantillas, on_conflict="ciclo_id,sistema_id").execute()
     print(f"  Plantillas escritas: {len(filas_plantillas)}")
 
+    zonas_desconocidas: set[str] = set()
+    tipos_sin_mapear: set[tuple[str, str]] = set()
+
+    def zona_id_de(e: dict) -> str | None:
+        forma_corta = (e.get("seccion") or "").strip() or (e.get("zona") or "").strip() or None
+        if not forma_corta:
+            return None
+        zona_id = zona_id_por_nombre.get(forma_corta)
+        if zona_id is None:
+            zonas_desconocidas.add(forma_corta)
+        return zona_id
+
+    def tipo_de(e: dict) -> str | None:
+        tipo = e.get("tipo")
+        if not tipo:
+            return tipo
+        diccionario = clave_tipo_por_sistema_y_nombre.get(e["sistema"], {})
+        if tipo in diccionario:
+            return diccionario[tipo]
+        if tipo in diccionario.values():
+            return tipo  # ya viene como clave (recarga después de la migración 0007)
+        if diccionario:
+            tipos_sin_mapear.add((e["sistema"], tipo))
+        return tipo
+
     filas_elementos = [
         {
             "ciclo_id": ciclo_id,
@@ -192,10 +240,17 @@ def main() -> int:
             "nombre": e["nombre"],
             "zona": e.get("zona"),
             "ubicacion": e.get("ubicacion"),
-            "tipo": e.get("tipo"),
+            "referencia": e.get("referencia"),
+            "seccion": e.get("seccion"),
+            "orden_seccion": e.get("orden_seccion"),
+            "zona_id": zona_id_de(e),
+            "tipo": tipo_de(e),
             "responsable": e.get("responsable"),
             "item_rag": e.get("item_rag"),
             "orden": e.get("orden", 0),
+            # 'orden_anclado' no se toca: es una fijación manual hecha
+            # desde la aplicación (ver web/lib/orden.ts) y una recarga del
+            # catálogo no debe perderla.
             "activo": e.get("activo", True),
             "notas": e.get("notas"),
         }
@@ -203,6 +258,10 @@ def main() -> int:
     ]
     cliente.table("elementos").upsert(filas_elementos, on_conflict="ciclo_id,sistema_id,codigo").execute()
     print(f"  Elementos escritos: {len(filas_elementos)}")
+    if zonas_desconocidas:
+        print(f"  Zonas sin catálogo, quedaron sin zona_id (avisar al área): {sorted(zonas_desconocidas)}")
+    if tipos_sin_mapear:
+        print(f"  Tipos sin diccionario en su sistema, se guardaron tal cual: {sorted(tipos_sin_mapear)}")
 
     en_archivo = {(e["sistema"], e["codigo"]) for e in catalogo["elementos"]}
     en_bd = cliente.table("elementos").select("id, codigo, activo, sistema_id").eq("ciclo_id", ciclo_id).execute().data

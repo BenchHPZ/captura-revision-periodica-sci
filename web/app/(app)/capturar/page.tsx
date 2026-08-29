@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { contarPorEstado, obtenerCicloAbierto, obtenerElementos, obtenerSistemas } from "@/lib/datos";
+import { SinCiclo } from "@/components/SinCiclo";
 
 export default async function CapturarPage() {
   const supabase = await createClient();
@@ -8,10 +9,12 @@ export default async function CapturarPage() {
 
   if (!ciclo) {
     return (
-      <div className="border border-vw-dsb-20 bg-vw-vg-10 p-4 text-sm text-vw-deep-space">
-        No hay ningún ciclo abierto todavía. Se abre corriendo{" "}
-        <code className="bg-white px-1 py-0.5">scripts/cargar_catalogo.py --confirmar</code>.
-      </div>
+      <SinCiclo>
+        No hay ningún ciclo abierto todavía. Abrir uno nuevo —clonando el catálogo del anterior—
+        todavía se hace corriendo{" "}
+        <code className="bg-white px-1 py-0.5">scripts/cargar_catalogo.py --confirmar</code>; una vez
+        abierto, se ajusta desde Configuración.
+      </SinCiclo>
     );
   }
 
@@ -20,10 +23,10 @@ export default async function CapturarPage() {
 
   if (activos.length === 0) {
     return (
-      <div className="border border-vw-dsb-20 bg-vw-vg-10 p-4 text-sm text-vw-deep-space">
+      <SinCiclo>
         El ciclo {ciclo.nombre} no tiene ningún sistema marcado para captura directa en su
         configuración (<code className="bg-white px-1 py-0.5">captura_directa</code>).
-      </div>
+      </SinCiclo>
     );
   }
 

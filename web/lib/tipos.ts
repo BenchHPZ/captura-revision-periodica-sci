@@ -27,11 +27,37 @@ export interface Plantilla {
   texto_libre: string[];
 }
 
+/** Una entrada del diccionario de tipos de un sistema — ver
+ * docs/decisiones.md D-18. 'clave' es lo que imprime el documento RAG en
+ * una columna angosta ("G"); 'nombre' es lo que se elige en pantalla
+ * ("Gabinete"). elementos.tipo guarda la clave, no el nombre. */
+export interface TipoDiccionario {
+  clave: string;
+  nombre: string;
+}
+
 export interface Sistema {
   id: string;
   clave: string;
   nombre: string;
   rag: string | null;
+  orden: number;
+  activo: boolean;
+  /** Vacío = el sistema no distingue tipos; la columna Tipo del RAG no se
+   * dibuja (ver docs/decisiones.md D-18 y D-19). */
+  tipos: TipoDiccionario[];
+}
+
+/** Catálogo único de la planta — no cuelga del ciclo ni del sistema, para
+ * que elementos de sistemas distintos puedan compartir zona cuando están
+ * co-ubicados. 'nombre' es la forma corta que imprime el documento RAG;
+ * 'descripcion' es contexto que sólo se muestra en pantalla. 'orden'
+ * sustituye a elementos.orden_seccion — ver docs/decisiones.md D-18. */
+export interface Zona {
+  id: string;
+  clave: string;
+  nombre: string;
+  descripcion: string | null;
   orden: number;
   activo: boolean;
 }
@@ -59,6 +85,12 @@ export interface Formato {
   revision: string | null;
   instrucciones: string[];
   notas: string | null;
+  /** Ubicación y Referencia son opcionales por formato — ver
+   * docs/decisiones.md D-19: RAG 2.2 no las lleva ambas porque
+   * 'ubicacion' está capturada en 0 de 33 hidrantes exteriores. Las
+   * demás columnas (id, numeración, tipo si el sistema lo tiene, puntos,
+   * observaciones) no son opcionales. */
+  columnas: { ubicacion: boolean; referencia: boolean };
 }
 
 export interface CicloFechas {
@@ -101,10 +133,19 @@ export interface Elemento {
   notas: string | null;
   /** Ayuda corta a la ubicación, ≤5 palabras — ver docs/modelo-de-datos.md §2.4. */
   referencia: string | null;
-  /** Agrupador del documento RAG. Campo propio del catálogo, no derivado
-   * de zona ni de ubicacion (ver docs/decisiones.md D-15). */
+  /** Agrupador original del documento RAG (D-15), sustituido por
+   * 'zona_id' (D-18). Se conserva sin leerse — ver docs/decisiones.md
+   * D-18 sobre por qué esta migración no borra columnas. */
   seccion: string | null;
   orden_seccion: number | null;
+  /** El agrupador vigente — reemplaza a 'seccion'/'orden_seccion' y a la
+   * 'zona' de texto libre: catálogo único de la planta (ver
+   * docs/decisiones.md D-18). null = todavía sin asignar. */
+  zona_id: string | null;
+  /** Cuando no es null, fija la posición del elemento dentro de su zona
+   * en vez de calcularla por ubicación/nombre (ver web/lib/orden.ts y
+   * docs/decisiones.md D-20). */
+  orden_anclado: number | null;
 }
 
 /**

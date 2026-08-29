@@ -6,7 +6,8 @@ import path from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import Automizer from "pptx-automizer";
 import { DEPOSITO, obtenerElementosParaInforme, obtenerPlantilla, obtenerSistemas, type ElementoParaInforme } from "../datos";
-import { agruparPorSeccion, type ElementoParaDocumento } from "../rag/documento";
+import { ordenarDentroDeZona, type ElementoParaOrdenar } from "../orden";
+import { agruparPorZona, type ElementoParaDocumento } from "../rag/documento";
 import { respuestaDe } from "../rag/render";
 import type { Ciclo, PuntoDef, Sistema } from "../tipos";
 import { generarCollage } from "./collage";
@@ -14,9 +15,10 @@ import * as geo from "./geometria";
 
 /**
  * Arma el informe fotográfico mensual: una diapositiva por elemento activo,
- * agrupadas por sistema y, dentro de cada sistema, por `seccion` — el mismo
- * criterio que usa el documento RAG (agruparPorSeccion, reutilizada tal
- * cual, no reimplementada: ver docs/decisiones.md D-17). Corre del lado del
+ * agrupadas por sistema y, dentro de cada sistema, por zona — el mismo
+ * criterio que usa el documento RAG (agruparPorZona y ordenarDentroDeZona,
+ * reutilizadas tal cual, no reimplementadas: ver docs/decisiones.md D-17
+ * y D-18). Corre del lado del
  * servidor con la sesión del usuario (nunca la llave de servicio — esa
  * queda reservada a las utilerías locales, ver README § Variables de
  * entorno), así que las mismas políticas de RLS que ya rigen el resto de
@@ -86,8 +88,10 @@ async function armarParteSistema(
     numeracion: e.nombre,
     ubicacion: e.ubicacion,
     referencia: e.referencia,
-    seccion: e.seccion,
-    ordenSeccion: e.orden_seccion,
+    tipo: e.tipo,
+    zona: e.zona?.nombre ?? null,
+    zonaOrden: e.zona?.orden ?? null,
+    ordenAnclado: e.orden_anclado,
     orden: e.orden,
   }));
   const porId = new Map(elementos.map((e) => [e.id, e]));
@@ -97,8 +101,17 @@ async function armarParteSistema(
     .load(geo.NOMBRE_PLANTILLA_ARCHIVO, "plantilla");
 
   let total = 0;
-  for (const [, elementosSeccion] of agruparPorSeccion(paraAgrupar)) {
-    const ordenados = [...elementosSeccion].sort((a, b) => a.orden - b.orden);
+  for (const [, elementosZona] of agruparPorZona(paraAgrupar)) {
+    const ordenados = ordenarDentroDeZona(
+      elementosZona.map(
+        (el): ElementoParaOrdenar => ({
+          id: el.id,
+          ubicacion: el.ubicacion,
+          nombre: el.numeracion,
+          ordenAnclado: el.ordenAnclado,
+        }),
+      ),
+    );
     for (const ref of ordenados) {
       const elemento = porId.get(ref.id);
       if (!elemento) continue;
@@ -149,7 +162,7 @@ async function agregarDiapositiva(
 
   const metadatos = [
     `Sistema: ${sistema.nombre}`,
-    elemento.seccion && `Sección: ${elemento.seccion}`,
+    elemento.zona && `Zona: ${elemento.zona.nombre}`,
     (elemento.ubicacion || elemento.referencia) &&
       `Ubicación: ${[elemento.ubicacion, elemento.referencia].filter(Boolean).join(" · ")}`,
     elemento.responsable && `Responsable: ${elemento.responsable}`,

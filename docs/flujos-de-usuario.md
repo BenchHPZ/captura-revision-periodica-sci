@@ -19,19 +19,23 @@ ciclo mensual de revisión.
 
 Se ejecuta una vez, antes del primer día de ejecución.
 
-1. El encargado entra a **Catálogo** y elige *Abrir ciclo nuevo*.
-2. Indica mes y año. El sistema propone la clave `2026-08` y el nombre `Agosto 2026`.
-3. Elige clonar del ciclo anterior. Se copian elementos y plantillas; **no** se copia nada de lo
-   capturado.
-4. Ajusta el catálogo con los cambios del mes: altas, bajas y reasignación de responsables.
-5. Revisa la plantilla de cada sistema activo y ajusta los puntos de revisión que apliquen este mes.
-6. Marca en configuración qué sistemas se capturan directo y cuáles llegan por recepción.
-7. Cierra el ciclo anterior. A partir de ese momento sólo hay un ciclo abierto.
+1. El encargado corre `python scripts/cargar_catalogo.py --ciclo <AAAA-MM> --confirmar` desde su
+   equipo. Todavía no hay pantalla para esto — abrir un ciclo clonando el anterior es una operación
+   de una vez al mes, bastante más compleja que ajustar uno ya abierto (ver docs/decisiones.md D-21).
+2. El script propone la clave `2026-08` y el nombre `Agosto 2026`, y cierra el ciclo anterior — a
+   partir de ese momento sólo hay uno abierto.
+3. Desde **Configuración → Ciclo**, el encargado ajusta nombre, fechas, qué sistemas quedan activos
+   y cuáles se capturan directo.
+4. Desde **Configuración → Sistemas** y **Configuración → Zonas**, da de alta lo que falte del
+   catálogo compartido antes de tocar elementos.
+5. Desde cada **sistema** (`/sistemas/[clave]`), ajusta el catálogo de elementos del mes (altas,
+   bajas, reasignación de responsables) y revisa la plantilla de puntos de revisión.
 
 **Resultado:** catálogo y plantillas listos; todos los elementos en estado `sin_iniciar`.
 
 En el primer ciclo no hay de dónde clonar: el catálogo se carga importando el JSON que produce el
-script de extracción de los formatos RAG, y se corrige desde la pantalla de catálogo.
+script de extracción de los formatos RAG, y se corrige desde `/sistemas/[clave]` o desde
+**Configuración → Importar y exportar**.
 
 ---
 
@@ -134,8 +138,9 @@ pero sin renglón en el RAG 2.3.
 
 **Alta de un elemento**
 
-1. En **Catálogo**, elegir el sistema y *Agregar elemento*.
-2. Capturar identificador único, rótulo, zona, ubicación, tipo y responsable.
+1. Entrar al sistema (`/sistemas/[clave]`) y elegir *Agregar elemento*.
+2. Capturar identificador único, rótulo, zona (del catálogo compartido), ubicación, tipo (del
+   diccionario del sistema, si tiene uno) y responsable.
 3. Guardar. El elemento aparece de inmediato en la lista de captura, en estado `sin_iniciar`.
 
 **Modificación**
@@ -150,11 +155,11 @@ tablero, pero conserva lo capturado por si la baja se revierte.
 
 **Importación masiva**
 
-Para cambios extensos se exporta el catálogo a JSON, se edita fuera y se vuelve a importar. La
-conciliación es por identificador dentro de cada sistema —el mismo identificador puede repetirse
-entre sistemas distintos sin ambigüedad, ver docs/modelo-de-datos.md §2.4—: lo existente se
-actualiza, lo nuevo se da de alta y lo que ya no aparece se marca inactivo. Ningún caso borra
-evidencia.
+Para cambios extensos se exporta el catálogo desde **Configuración → Importar y exportar**, se edita
+fuera y se vuelve a importar. La conciliación es por identificador dentro de cada sistema —el mismo
+identificador puede repetirse entre sistemas distintos sin ambigüedad, ver docs/modelo-de-datos.md
+§2.4—: lo existente se actualiza, lo nuevo se da de alta y lo que ya no aparece se marca inactivo.
+Ningún caso borra evidencia.
 
 ---
 
@@ -162,7 +167,7 @@ evidencia.
 
 Los puntos que se supervisan cambian de un mes a otro, y a veces dentro del mismo mes.
 
-1. En **Catálogo**, abrir la plantilla del sistema.
+1. Entrar al sistema (`/sistemas/[clave]`) y abrir su plantilla.
 2. Agregar, quitar o reordenar puntos; cambiar su etiqueta, su tipo o su obligatoriedad. Lo mismo
    para los bloques fotográficos y los campos de descripción.
 3. Al guardar, el sistema recalcula el estado de todos los elementos del sistema y **advierte cuántos
@@ -186,7 +191,8 @@ el estado, pero permanecen almacenados porque son información levantada en camp
 4. Descarga el archivo, lo revisa abriéndolo en PowerPoint y lo deposita a mano en la carpeta de
    trabajo junto con los formatos RAG llenados.
 5. Entrega a coordinación de turno para supervisión y firma.
-6. Marca el ciclo como cerrado. Queda disponible para consulta, pero ya no admite captura.
+6. Desde **Configuración → Ciclo**, pulsa *Cerrar ciclo*. Queda disponible para consulta, pero ya no
+   admite captura — no hay vuelta atrás desde la pantalla; reabrirlo exige tocar la base directamente.
 
 El generador corre en el servidor, con la sesión normal del encargado — no hace falta estar frente al
 equipo que lo genera. Lo que sigue siendo manual, y a propósito, es la revisión: el archivo se abre en

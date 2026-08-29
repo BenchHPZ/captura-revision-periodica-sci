@@ -7,6 +7,7 @@ import {
   obtenerPlantilla,
   obtenerSistemas,
 } from "@/lib/datos";
+import { SinCiclo } from "@/components/SinCiclo";
 import { Recepcion } from "./Recepcion";
 
 export default async function RecepcionPage() {
@@ -14,11 +15,7 @@ export default async function RecepcionPage() {
   const ciclo = await obtenerCicloAbierto(supabase);
 
   if (!ciclo) {
-    return (
-      <div className="border border-vw-dsb-20 bg-vw-vg-10 p-4 text-sm text-vw-deep-space">
-        No hay ningún ciclo abierto todavía.
-      </div>
-    );
+    return <SinCiclo>No hay ningún ciclo abierto todavía.</SinCiclo>;
   }
 
   const todosLosSistemas = await obtenerSistemas(supabase);

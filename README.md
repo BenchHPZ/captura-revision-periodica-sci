@@ -28,8 +28,8 @@ como los puntos a supervisar se puedan modificar durante la ejecución sin inter
   evidencia de los otros sistemas siga llegando por WhatsApp.
 - **Seguimiento** del avance separado en los dos procesos que corren en paralelo: la captura propia y
   lo que se recibe de terceros.
-- **Catálogo configurable**: los elementos y los puntos a supervisar se editan durante la ejecución
-  y se importan y exportan en JSON.
+- **Catálogo configurable**: elementos, plantillas, zonas, sistemas y el ciclo mismo se editan desde
+  la aplicación durante la ejecución, sin Python ni SQL; se importan y exportan en JSON.
 - **Generación del informe** fotográfico mensual en PowerPoint, con un botón desde la propia
   aplicación, a partir de lo capturado.
 
@@ -75,18 +75,18 @@ captura-sci/
 ├── web/                              aplicación Next.js
 │   ├── app/
 │   │   ├── login/                    fuera del grupo (app): sin sesión no se llega aquí
-│   │   └── (app)/                    layout.tsx exige sesión; encabezado y cerrar sesión
-│   │       ├── page.tsx              inicio: enlaces a Capturar y Recepción
+│   │   └── (app)/                    layout.tsx exige sesión; encabezado con NavBar.tsx
+│   │       ├── page.tsx, Tablero.tsx El inicio es el tablero (D-21) — avance, ritmo, tabla, exportación
 │   │       ├── capturar/             Fase 2 — sistemas, lista por sistema, formulario
 │   │       │   └── [sistema]/[id]/   Formulario.tsx (cliente) + actions.ts (servidor)
 │   │       ├── recepcion/            Fase 3 — Recepcion.tsx (cliente) + actions.ts (servidor)
-│   │       ├── tablero/              Fase 4 — Tablero.tsx: avance, ritmo, tabla y exportación
-│   │       ├── catalogo/             Fase 5 — sistemas, importar/exportar catálogo
-│   │       │   └── [sistema]/        PlantillaEditor.tsx + ElementosCatalogo.tsx (cliente)
-│   │       ├── rag/                  Formatos RAG estandarizados (D-15/D-16) — lista y visor
-│   │       │   └── [formato]/        VisorRAG.tsx: ver, alternar vacío/lleno, imprimir · FormatoEditor.tsx
-│   │       └── informe/              Fase 6 (D-17) — botón, genera el .pptx en el servidor
-│   ├── components/EstadoBadge.tsx
+│   │       ├── sistemas/[clave]/     Fase 5 + RAG fusionados (D-21): elementos, plantilla, formato y documento RAG
+│   │       ├── configuracion/        Ciclo · Sistemas · Zonas · Importar y exportar, en pestañas (D-21)
+│   │       ├── informe/              Fase 6 (D-17) — botón, genera el .pptx en el servidor
+│   │       ├── catalogo/, rag/,      Redirigen a /sistemas/[clave] o /configuracion — no hay pantalla aquí
+│   │       │   tablero/              tablero/ redirige a /
+│   ├── components/                   Aviso, Boton, Campo, PanelConfirmacion, BuscadorLista, SinCiclo,
+│   │                                 NavBar, EstadoBadge — antes copiados a mano en cada pantalla (D-21)
 │   └── lib/
 │       ├── supabase/                 clientes de navegador, servidor y proxy
 │       ├── tipos.ts                  formas compartidas, reflejan el diccionario de datos
@@ -96,7 +96,8 @@ captura-sci/
 │       ├── imagen.ts                 reducción a 2560px/calidad 88 con orientación EXIF
 │       ├── descargas.ts              descargar() — genera y dispara un archivo en el navegador
 │       ├── rutas.ts, texto.ts        rutas de Storage; búsqueda sin acentos
-│       ├── rag/                      documento.ts + render.ts + estilos.ts — puros, sin Next/Supabase/React
+│       ├── orden.ts                  criterio único de recorrido — zona, ubicación, anclaje (D-20)
+│       ├── rag/                      documento.ts + render.ts + columnas.ts + estilos.ts — puros, sin Next/Supabase/React
 │       │                             (ver docs/decisiones.md D-16: pensados para una segunda entrada local)
 │       └── informe/                  collage.ts (sharp) + geometria.ts + generador.ts (pptx-automizer)
 ├── supabase/
@@ -214,7 +215,7 @@ dependan de ellas.
 | Fase | Entregable | Estado |
 |---|---|---|
 | 0 | Documentación y estructura del repositorio | Terminada |
-| 1 | Base de datos, seguridad, sesión y carga inicial del catálogo | Proyecto enlazado y credenciales en `web/.env.local`; falta aplicar el esquema |
+| 1 | Base de datos, seguridad, sesión y carga inicial del catálogo | Terminada — esquema aplicado y catálogo cargado contra el proyecto real |
 | 2 | Captura desde teléfono con formulario configurable | Código listo; falta probarlo en un teléfono real |
 | 3 | Recepción y clasificación de evidencia externa | Código listo; falta probarlo con fotos reales |
 | 4 | Tablero de seguimiento | Código listo; falta probarlo con datos reales |
@@ -314,6 +315,47 @@ falla— después de que armar el `.pptx` por sistema y combinar al final en vez
 completo, con los tres hallazgos por separado, está en D-17. Pendiente: medir el ciclo completo con
 los 221 elementos capturados y abrir el resultado en PowerPoint para confirmar que la plantilla y las
 fuentes institucionales se ven como se espera.
+
+**Catálogos compartidos y columnas del RAG** (fuera de la numeración de fases, terminada). Se
+detectó que `elementos.zona` y `elementos.seccion` eran el mismo dato tecleado dos veces, y que
+`elementos.tipo` era texto libre que ningún documento imprimía pese a tener valores reales ("Gabinete"
+/"Pie", "Mariposa"/"Vástago"). `zonas` (nuevo, migración `0007_catalogos.sql`) es el catálogo único de
+la planta —no cuelga del ciclo ni del sistema, para co-ubicar elementos de sistemas distintos— y
+sustituye a `orden_seccion`; `sistemas.tipos` es un diccionario `{clave, nombre}` por sistema, mismo
+criterio que `plantillas.puntos` (D-02). `web/lib/rag/columnas.ts` es ahora la única fuente de qué
+columnas lleva el documento: antes esa lista vivía repetida a mano en cinco lugares de `render.ts`,
+y el desajuste entre esos conteos ya había causado el defecto que D-15 documenta — con columnas
+condicionales (Ubicación/Referencia por formato, según `formatos.columnas`; Tipo sólo si el sistema
+trae diccionario) ese riesgo era real de reintroducir. `web/scripts/verificar-rag.ts` comprueba, para
+varios documentos de prueba, que `columnasDe().length` y todos los conteos de columnas del HTML
+coinciden. `web/lib/orden.ts` reemplaza a `elementos.orden` como criterio de recorrido: zona → ubicación
+(alfabético natural) → nombre, con `elementos.orden_anclado` como excepción manual — la misma función
+la usan el documento RAG y el informe fotográfico. El detalle completo está en D-18, D-19 y D-20.
+
+Durante esta migración se encontró y se corrigió un problema real: `scripts/cargar_catalogo.py`
+sobrescribía sin avisar cualquier corrección hecha directo en la base (`seccion` de 89 elementos vivía
+sólo ahí, no en el JSON versionado) — el script ya lleva una advertencia explícita al respecto (ver
+D-18). Los 175 elementos que quedaron sin zona (esos 89 más 91 que nunca la tuvieron) se recuperaron
+con el área en un Excel de una sola vez, no un flujo repetible — al llenarlo salieron cinco zonas más
+finas para botones avisadores (antes tres, inferidas del PDF) y un ajuste de nombre. Los 221 elementos
+activos del ciclo ya tienen `zona_id` — ver el detalle en D-18.
+
+**Reorganización de pantallas** (fuera de la numeración de fases, terminada; D-21). Seis entradas sin
+barra de navegación pasan a tres: el **inicio** (`/`) es ahora el tablero, en vez de un menú de seis
+tarjetas iguales; **`/sistemas/[clave]`** fusiona lo que antes eran `/catalogo/[sistema]` y
+`/rag/[formato]` —elementos, plantilla, formato y documento RAG de un mismo sistema, en una sola
+pantalla, con enlace real entre ellos por primera vez—; **`/configuracion`** fusiona `/catalogo` y
+`/rag` en pestañas (Ciclo, Sistemas, Zonas, Importar y exportar). Es la primera vez que `ciclos.config`
+y `sistemas` se editan desde la aplicación en vez de por Python o el panel de Supabase — incluido
+cerrar el ciclo, que tampoco tenía pantalla. Antes de mover nada se extrajeron a `web/components/`
+los patrones que estaban copiados a mano en cada pantalla (`Aviso`, `PanelVistaPrevia`/`PanelExito`,
+`SinCiclo`, `Campo`/`CampoTexto`/`CampoSelect`, `BuscadorLista`), y `ElementosCatalogo.tsx` se
+reescribió de fondo: zona y tipo pasan de texto libre a seleccionarse de un catálogo, ya no se pueden
+escribir valores que no existan. Las rutas viejas (`/catalogo`, `/catalogo/[sistema]`, `/rag`,
+`/rag/[formato]`, `/tablero`) redirigen a su lugar nuevo. **Deliberadamente fuera de esta pasada:**
+abrir un ciclo nuevo (sigue siendo `cargar_catalogo.py`) y mover el recorrido de captura
+(`/capturar`, "guardar y siguiente") al criterio de `lib/orden.ts` — hoy sólo lo usan el documento RAG
+y el informe; el detalle está en D-21.
 
 **Ciclo piloto:** agosto 2026. Se libera para los dos sistemas internos —54 botones avisadores y 71
 hidrantes interiores— y da seguimiento a los tres restantes mediante recepción. Los criterios con los

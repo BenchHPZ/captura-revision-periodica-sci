@@ -7,20 +7,34 @@ import { calcularEstado } from "@/lib/estado";
 import { rutaFoto } from "@/lib/rutas";
 import type { Elemento, Plantilla } from "@/lib/tipos";
 
+function revalidarTodo() {
+  revalidatePath("/sistemas", "layout");
+  revalidatePath("/capturar", "layout");
+  revalidatePath("/recepcion");
+  revalidatePath("/", "page");
+}
+
+// =====================================================================
+// Elementos — antes en catalogo/[sistema]/actions.ts. 'zona' y 'seccion'
+// (texto libre) se sustituyen por 'zona_id' (catálogo único, D-18);
+// 'tipo' pasa a ser la clave del diccionario del sistema.
+// =====================================================================
 export interface DatosElemento {
   codigo: string;
   nombre: string;
-  zona: string | null;
   ubicacion: string | null;
   /** ≤5 palabras — se valida en ElementosCatalogo.tsx antes de llegar aquí. */
   referencia: string | null;
-  /** Agrupador del documento RAG; campo propio del catálogo, no derivado
-   * de zona/ubicacion (ver docs/decisiones.md D-15). */
-  seccion: string | null;
-  orden_seccion: number | null;
+  zona_id: string | null;
+  /** Cuando no es null, fija la posición dentro de su zona — ver web/lib/orden.ts. */
+  orden_anclado: number | null;
+  /** Clave del diccionario de tipos del sistema, no el nombre completo. */
   tipo: string | null;
   responsable: string | null;
 }
+
+const SELECT_ELEMENTO =
+  "id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion, zona_id, orden_anclado";
 
 async function siguienteOrden(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -45,12 +59,10 @@ export async function crearElemento(cicloId: string, sistemaId: string, datos: D
   const { data, error } = await supabase
     .from("elementos")
     .insert({ ciclo_id: cicloId, sistema_id: sistemaId, ...datos, orden })
-    .select(
-      "id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion",
-    )
+    .select(SELECT_ELEMENTO)
     .single();
   if (error) throw error;
-  revalidatePath("/catalogo", "layout");
+  revalidarTodo();
   return data as Elemento;
 }
 
@@ -100,8 +112,7 @@ export async function actualizarElemento(
 
   const { error } = await supabase.from("elementos").update(datos).eq("id", elementoId);
   if (error) throw error;
-  revalidatePath("/catalogo", "layout");
-  revalidatePath("/capturar", "layout");
+  revalidarTodo();
 }
 
 /** Dar de baja no borra (Flujo 5): el elemento sale de las listas de
@@ -110,10 +121,12 @@ export async function cambiarActivo(elementoId: string, activo: boolean) {
   const supabase = await createClient();
   const { error } = await supabase.from("elementos").update({ activo }).eq("id", elementoId);
   if (error) throw error;
-  revalidatePath("/catalogo", "layout");
-  revalidatePath("/capturar", "layout");
+  revalidarTodo();
 }
 
+// =====================================================================
+// Plantilla — sin cambios de fondo, sólo de dirección.
+// =====================================================================
 export interface ImpactoPlantilla {
   totalElementos: number;
   cambios: number;
@@ -177,10 +190,25 @@ export async function guardarPlantilla(
     }
   }
 
-  revalidatePath("/catalogo", "layout");
-  revalidatePath("/capturar", "layout");
-  revalidatePath("/recepcion");
-  revalidatePath("/tablero");
-
+  revalidarTodo();
   return impacto;
+}
+
+// =====================================================================
+// Formato — antes en rag/actions.ts. Gana 'columnas' (D-19).
+// =====================================================================
+export interface DatosFormatoEditable {
+  nombre: string;
+  periodicidad: string;
+  documento_referencia: string;
+  revision: string | null;
+  instrucciones: string[];
+  columnas: { ubicacion: boolean; referencia: boolean };
+}
+
+export async function guardarFormato(formatoId: string, datos: DatosFormatoEditable): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("formatos").update(datos).eq("id", formatoId);
+  if (error) throw error;
+  revalidarTodo();
 }

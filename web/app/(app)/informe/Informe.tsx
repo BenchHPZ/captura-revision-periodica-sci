@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { generarInforme, type InformeGenerado } from "./actions";
 
 type Estado =
@@ -27,11 +28,15 @@ export function Informe({ ciclo }: { ciclo: { nombre: string } }) {
 
   return (
     <div>
-      <h1 className="text-2xl text-vw-deep-space">Informe fotográfico</h1>
+      <Link href="/" className="text-sm text-vw-dsb-60 hover:text-vw-vivid-green">
+        ← Tablero
+      </Link>
+
+      <h1 className="mt-2 text-2xl text-vw-deep-space">Informe fotográfico</h1>
       <p className="mt-1 text-sm text-vw-dsb-60">{ciclo.nombre}</p>
 
       <p className="mt-4 max-w-2xl text-sm text-vw-dsb-60">
-        Arma una diapositiva por elemento activo, agrupadas por sistema y por sección, con su
+        Arma una diapositiva por elemento activo, agrupadas por sistema y por zona, con su
         collage fotográfico, sus tres descripciones y el resultado de sus puntos de revisión, sobre
         la plantilla corporativa. Con 221 elementos puede tardar varios minutos — no cierres esta
         pantalla mientras genera.

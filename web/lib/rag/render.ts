@@ -5,21 +5,10 @@
 // docs/decisiones.md D-16). No debe importar "server-only", "next/*" ni
 // "react" — ver la prueba de pureza en la verificación del cambio.
 import type { PuntoDef, TipoPunto, ValorPunto } from "../tipos";
+import { columnasDe, type ColumnaRAG } from "./columnas";
 import { LOGO_VW_SVG } from "./constantes";
 import { ESTILOS_RAG } from "./estilos";
 import type { CierreFormato, DocumentoRAG, ModoDocumentoRAG, RenglonRAG } from "./tipos";
-
-// Presupuesto de ancho en milímetros, para usar la hoja completa (Carta,
-// márgenes de 8mm ⇒ ≈200mm útiles) sin dejarlo a la suerte del navegador.
-// Observaciones se lleva todo lo que sobra — ver docs/decisiones.md D-15 §7.4.
-const ANCHO_TOTAL_MM = 200;
-const ANCHO_ID_MM = 7;
-const ANCHO_NUMERACION_MM = 20;
-const ANCHO_UBICACION_MM = 18;
-const ANCHO_REFERENCIA_MM = 28;
-const ANCHO_PUNTO_MM = 10; // una sola columna por punto SI/NO — la respuesta se escribe dentro
-const ANCHO_PUNTO_SIMPLE_MM = 20; // tipos que no son SI/NO (texto, número, fecha, selección)
-const ANCHO_OBSERVACIONES_MIN_MM = 30;
 
 function escapeHtml(valor: string): string {
   return valor
@@ -35,10 +24,6 @@ function escapeHtml(valor: string): string {
  * el ancho sin agregar información — ver docs/decisiones.md D-15 §7.4. */
 function esPuntoRespuesta(tipo: TipoPunto): boolean {
   return tipo === "si_no" || tipo === "si_no_na";
-}
-
-function anchoPuntoMM(punto: PuntoDef): number {
-  return esPuntoRespuesta(punto.tipo) ? ANCHO_PUNTO_MM : ANCHO_PUNTO_SIMPLE_MM;
 }
 
 function formatearFecha(iso: string): string {
@@ -61,7 +46,7 @@ export function respuestaDe(valor: ValorPunto | undefined): "SI" | "NO" | "NA" |
 /** La celda de un punto de revisión para un renglón: una sola, con la
  * respuesta escrita dentro. En modo vacío queda en blanco, para anotar
  * SI o NO a mano igual que en el papel. */
-function celdasPunto(punto: PuntoDef, valor: ValorPunto | undefined, modo: ModoDocumentoRAG): string {
+function celdaPunto(punto: PuntoDef, valor: ValorPunto | undefined, modo: ModoDocumentoRAG): string {
   if (!esPuntoRespuesta(punto.tipo)) {
     if (modo === "vacio" || valor === undefined) return `<td></td>`;
     return `<td>${escapeHtml(String(valor))}</td>`;
@@ -71,17 +56,43 @@ function celdasPunto(punto: PuntoDef, valor: ValorPunto | undefined, modo: ModoD
   return `<td class="rag-respuesta rag-respuesta-${respuesta.toLowerCase()}">${respuesta}</td>`;
 }
 
-function renderizarRenglon(renglon: RenglonRAG, puntos: PuntoDef[], modo: ModoDocumentoRAG): string {
-  const celdas = puntos.map((p) => celdasPunto(p, renglon.valores[p.id], modo)).join("");
-  return `
-    <tr class="rag-renglon">
-      <td class="rag-celda-id">${renglon.id}</td>
-      <td class="rag-celda-numeracion">${escapeHtml(renglon.numeracion)}</td>
-      <td class="rag-celda-ubicacion">${escapeHtml(renglon.ubicacion)}</td>
-      <td class="rag-celda-referencia">${escapeHtml(renglon.referencia)}</td>
-      ${celdas}
-      <td class="rag-celda-obs">${modo === "vacio" ? "" : escapeHtml(renglon.observaciones)}</td>
-    </tr>`;
+/** La celda de una columna cualquiera para un renglón — el único lugar
+ * que sabe de dónde sale cada dato, recorriendo la misma lista de
+ * columnas que armó el <thead> y el <colgroup> (ver ./columnas.ts). */
+function celdaDeColumna(
+  columna: ColumnaRAG,
+  renglon: RenglonRAG,
+  puntosPorId: Map<string, PuntoDef>,
+  modo: ModoDocumentoRAG,
+): string {
+  switch (columna.id) {
+    case "id":
+      return `<td class="${columna.clase}">${renglon.id}</td>`;
+    case "numeracion":
+      return `<td class="${columna.clase}">${escapeHtml(renglon.numeracion)}</td>`;
+    case "ubicacion":
+      return `<td class="${columna.clase}">${escapeHtml(renglon.ubicacion)}</td>`;
+    case "referencia":
+      return `<td class="${columna.clase}">${escapeHtml(renglon.referencia)}</td>`;
+    case "tipo":
+      return `<td class="${columna.clase}">${escapeHtml(renglon.tipo)}</td>`;
+    case "observaciones":
+      return `<td class="${columna.clase}">${modo === "vacio" ? "" : escapeHtml(renglon.observaciones)}</td>`;
+    default: {
+      const punto = puntosPorId.get(columna.id);
+      return punto ? celdaPunto(punto, renglon.valores[columna.id], modo) : `<td class="${columna.clase}"></td>`;
+    }
+  }
+}
+
+function renderizarRenglon(
+  renglon: RenglonRAG,
+  columnas: ColumnaRAG[],
+  puntosPorId: Map<string, PuntoDef>,
+  modo: ModoDocumentoRAG,
+): string {
+  const celdas = columnas.map((c) => celdaDeColumna(c, renglon, puntosPorId, modo)).join("");
+  return `<tr class="rag-renglon">${celdas}</tr>`;
 }
 
 /** El bloque de firmas como tabla propia, independiente de la rejilla de
@@ -126,35 +137,31 @@ function renderizarFilaCierrePie(cierre: CierreFormato, totalCols: number): stri
  * si no, se imprime una vez al final, fuera de la tabla.
  */
 export function renderizarCuerpoRAG(doc: DocumentoRAG): string {
-  // Una columna por punto — ya no hay sub-columnas SI/NO, así que el
-  // conteo es directo. Cuando eran dos, este número se quedaba corto y
-  // todo lo que usa colspan (logo, título, instrucciones, franjas de
-  // sección y pie) se cortaba antes del borde derecho.
-  const totalCols = 4 + doc.puntos.length + 1; // id, numeracion, ubicacion, referencia + puntos + observaciones
+  const columnas = columnasDe(doc);
+  // Antes este número se calculaba aparte (4 + puntos.length + 1) y podía
+  // desincronizarse del resto — ver docs/decisiones.md D-19. Ahora es
+  // literalmente cuántas columnas se armaron.
+  const totalCols = columnas.length;
+  const puntosPorId = new Map(doc.puntos.map((p) => [p.id, p]));
 
-  const anchoPuntosTotal = doc.puntos.reduce((suma, p) => suma + anchoPuntoMM(p), 0);
-  const anchoObservaciones = Math.max(
-    ANCHO_OBSERVACIONES_MIN_MM,
-    ANCHO_TOTAL_MM - ANCHO_ID_MM - ANCHO_NUMERACION_MM - ANCHO_UBICACION_MM - ANCHO_REFERENCIA_MM - anchoPuntosTotal,
-  );
+  const colgroup = columnas.map((c) => `<col style="width:${c.anchoMM}mm">`).join("");
 
-  const columnasPuntos = doc.puntos.map((p) => `<col style="width:${anchoPuntoMM(p)}mm">`).join("");
-
-  // La etiqueta va en vertical para que la columna quede angosta; su
-  // altura está acotada por CSS (.rag-punto-vertical), de modo que una
-  // etiqueta larga se parte en dos renglones en vez de estirar el
-  // encabezado hacia abajo sin límite.
-  const encabezadosPuntos = doc.puntos
-    .map((p) => {
-      const clase = esPuntoRespuesta(p.tipo) ? "rag-punto-vertical" : "rag-celda-punto-simple";
-      return `<th class="${clase}"><span>${escapeHtml(p.etiqueta)}</span></th>`;
-    })
+  // La etiqueta va en vertical para que la columna de un punto SI/NO
+  // quede angosta; su altura está acotada por CSS (.rag-punto-vertical),
+  // de modo que una etiqueta larga se parte en dos renglones en vez de
+  // estirar el encabezado hacia abajo sin límite.
+  const encabezados = columnas
+    .map((c) =>
+      c.origen === "punto"
+        ? `<th class="${c.clase}"><span>${escapeHtml(c.etiqueta)}</span></th>`
+        : `<th class="${c.clase}">${escapeHtml(c.etiqueta)}</th>`,
+    )
     .join("");
 
   const filasSeccion = doc.secciones
     .map((seccion) => {
       const encabezado = `<tr class="rag-seccion"><th colspan="${totalCols}">${escapeHtml(seccion.nombre)}</th></tr>`;
-      const filas = seccion.renglones.map((r) => renderizarRenglon(r, doc.puntos, doc.modo)).join("");
+      const filas = seccion.renglones.map((r) => renderizarRenglon(r, columnas, puntosPorId, doc.modo)).join("");
       return encabezado + filas;
     })
     .join("");
@@ -168,12 +175,7 @@ export function renderizarCuerpoRAG(doc: DocumentoRAG): string {
 <div class="rag-doc">
   <table class="rag-tabla">
     <colgroup>
-      <col style="width:${ANCHO_ID_MM}mm">
-      <col style="width:${ANCHO_NUMERACION_MM}mm">
-      <col style="width:${ANCHO_UBICACION_MM}mm">
-      <col style="width:${ANCHO_REFERENCIA_MM}mm">
-      ${columnasPuntos}
-      <col style="width:${anchoObservaciones}mm">
+      ${colgroup}
     </colgroup>
     <thead>
       <tr class="rag-franja-superior">
@@ -197,12 +199,7 @@ export function renderizarCuerpoRAG(doc: DocumentoRAG): string {
           : ""
       }
       <tr class="rag-encabezado-principal">
-        <th class="rag-celda-id">#</th>
-        <th class="rag-celda-numeracion">Numeración</th>
-        <th class="rag-celda-ubicacion">Ubicación</th>
-        <th class="rag-celda-referencia">Referencia</th>
-        ${encabezadosPuntos}
-        <th class="rag-celda-obs">Observaciones</th>
+        ${encabezados}
       </tr>
     </thead>
     <tbody>

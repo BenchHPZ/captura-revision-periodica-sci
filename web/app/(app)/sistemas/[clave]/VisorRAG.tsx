@@ -12,7 +12,10 @@ interface Props {
   modo: "vacio" | "lleno";
   hrefVacio: string;
   hrefLleno: string;
-  volverHref: string;
+  /** Antes esta pantalla vivía sola en /rag/[formato] y necesitaba
+   * volver a la lista; ahora está embebida en /sistemas/[clave], que ya
+   * trae su propio "← Configuración" arriba — se omite si no aplica. */
+  volverHref?: string;
 }
 
 /**
@@ -56,10 +59,12 @@ function imprimir(htmlCompleto: string) {
 export function VisorRAG({ html, htmlCompleto, modo, hrefVacio, hrefLleno, volverHref }: Props) {
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <Link href={volverHref} className="text-sm text-vw-dsb-60 hover:text-vw-vivid-green">
-          ← Formatos RAG
-        </Link>
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
+        {volverHref && (
+          <Link href={volverHref} className="mr-auto text-sm text-vw-dsb-60 hover:text-vw-vivid-green">
+            ← Formatos RAG
+          </Link>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex border border-vw-dsb-20 text-sm">
             <Link

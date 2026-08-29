@@ -577,3 +577,217 @@ imágenes con cinco acomodos distintos según cantidad y orientación, algo que 
 resuelve sin escribir un motor de maquetación de imágenes propio —justo lo contrario del caso RAG,
 donde una tabla con `<thead>/<tfoot>` resuelve la paginación de forma nativa—, y D-04 exige revisar el
 resultado abierto en PowerPoint antes de entregarlo, no sólo poder verlo.
+
+---
+
+## D-18 · Catálogo único de zonas y diccionario de tipos por sistema
+
+**Estado:** vigente
+
+**Contexto.** Verificado contra el ciclo real (228 elementos): `elementos.zona` y `elementos.seccion`
+eran la misma cadena en hidrantes exteriores y en válvulas subterráneas, y en botones avisadores la
+forma larga y la corta de la misma partición — se estaba tecleando el mismo dato dos veces.
+`elementos.orden_seccion` (D-15) estaba en cero en los 228: nunca se llegó a usar, y su regla —"gana
+el primer valor no nulo del grupo"— era necesaria sólo porque el orden vivía copiado en cada elemento
+en vez de una vez por zona. `elementos.tipo` es texto libre que ninguna pantalla mostraba ni ningún
+documento imprimía; sus valores reales (`Gabinete`/`Pie` en hidrantes exteriores, `Mariposa`/`Vástago`
+en válvulas subterráneas) ya estaban descritos como prosa en las instrucciones de esos dos formatos
+("P = Pie, G = Gabinete"; "Mariposa … o Vástago …").
+
+**Decisión.** Se agregó `zonas`, catálogo único de la planta —no cuelga del ciclo ni del sistema, para
+que un elemento de hidrantes exteriores y uno de válvulas subterráneas puedan compartir zona cuando
+están co-ubicados— con `nombre` (forma corta, lo que imprime el RAG) y `descripcion` (contexto, sólo
+en pantalla). `zonas.orden` sustituye a `orden_seccion`: el orden de las secciones pasa a ser propiedad
+del catálogo, no de cada elemento. `elementos.zona_id` referencia esa tabla. Cada sistema gana
+`tipos jsonb`, un diccionario `{clave, nombre}` (mismo criterio que `plantillas.puntos`, D-02:
+configuración como datos, no como estructura del programa); `elementos.tipo` pasa a guardar la clave,
+no el nombre completo.
+
+La migración (`0007_catalogos.sql`) sembró 17 zonas leyendo la forma corta ya capturada
+(`seccion` si existía, si no `zona`) y **no fusionó** zonas de sistemas distintos con nombres
+parecidos (p. ej. "Calle 1" en hidrantes exteriores contra "Calle 1 · Seccionamiento" en válvulas
+subterráneas): decidir si de verdad son el mismo lugar físico es criterio del área, no algo que una
+migración deba adivinar — se deja para la pantalla de Zonas. Los 91 elementos de hidrantes interiores
+y válvulas aéreas, sin `zona`/`seccion` capturada, quedaron con `zona_id` nulo. `zona`, `seccion` y
+`orden_seccion` no se borraron — ver la nota sobre la cadena de migraciones más abajo.
+
+**Por qué se revierte el criterio de D-15.** D-15 había considerado y descartado reutilizar `zona`
+para esto mismo, con el argumento de que atarían la agrupación del documento a un campo que sirve
+para otra cosa. La razón dejó de aplicar: `zona` y `seccion` demostraron ser el mismo dato en la
+práctica, no dos cosas que coincidieran por accidente, así que ya no hay "otro campo" del que
+depender — hay un catálogo propio (`zonas`), que es lo que D-15 pedía desde el principio.
+
+**Incidente durante esta migración, y por qué queda documentado.** Antes de sembrar `zonas` se
+confirmó que la base real ya traía `seccion` para los 54 avisadores y `zona`/`seccion` para los 33
+hidrantes exteriores — datos que no estaban en `supabase/seed/catalogo_2026-08.json` (el archivo
+versionado, último commit al momento de esta migración). Alguien los había cargado directo a la base
+—a mano en `/catalogo`, o con un proceso que nunca se exportó de vuelta al JSON— sin dejar rastro en
+el repositorio. Al probar la actualización de `scripts/cargar_catalogo.py` para esta misma migración,
+correr `--confirmar` sobre ese archivo desactualizado **revirtió esos 89 elementos a `null`**: el
+script siempre ha sobrescrito todos los campos sin distinguir qué cambió desde la última exportación.
+La causa raíz no es la migración —`0007_catalogos.sql` sembró correctamente con los datos que tenía
+enfrente en ese momento—, es que `cargar_catalogo.py --confirmar` nunca fue seguro de correr dos veces
+sobre un catálogo que ya se editó fuera del propio archivo. Ahora lleva una advertencia explícita en
+su docstring. Los 89 `zona_id` se volvieron a resolver una vez recuperado el dato original.
+
+**Consecuencias.** A cambio de sembrar sin fusionar, quedó trabajo de curación que ningún script podía
+inventar: los 175 elementos sin zona (89 revertidos por el incidente más 91 que nunca la tuvieron) se
+llenaron a mano, en un Excel exportado para el área con hoja de referencia de las zonas ya sembradas
+—`web/scripts` no genera este archivo, se armó una sola vez para esta recuperación. Al llenarlo se
+encontraron inconsistencias reales, no errores de captura: los 54 botones avisadores quedaron
+reclasificados de la partición original de tres zonas (Zona 1/2/3-4, que el extractor había inferido
+por corte de página del PDF — ver `scripts/extraer_rags.py`) a cinco zonas más finas y ya reales
+(Nave 01, Nave 90, Oficinas, Pent house, Exterior); `cuarto-bombas` se renombró de "Cuarto de bombas
+contra incendio" a "Cuarto de bombas", el nombre que de verdad usa el área. Zona 1/2/3-4 quedaron sin
+ningún elemento y se marcaron `activo = false` — no se borran, D-15 documenta que la partición original
+era una inferencia del extractor, no un dato capturado. Con eso, los 221 elementos activos del ciclo
+tienen `zona_id`. La agrupación del documento y la del informe fotográfico (D-17) dependen ahora de
+una sola fuente de verdad, editable desde la aplicación en vez de tecleada dos veces por sistema.
+
+**Deuda que sigue sin resolver.** La cadena de migraciones de este repositorio no corre sobre una
+base limpia: `0005_rag.sql`, tal como está en el repo, ya tiene la forma *posterior* a
+`0006_ajuste_formatos.sql` (crea `formatos.documento_referencia`/`revision` directamente, nunca crea
+`encabezado`/`cierre`), así que sobre un proyecto nuevo la `0006` fallaría tres veces. Hoy la única
+fuente de verdad del esquema es la base real, no el repositorio — un respaldo del código no alcanza
+para reconstruirla. Se decidió no resolverlo en esta migración; queda anotado para cuando se retome.
+
+---
+
+## D-19 · Fuente única de las columnas del documento RAG
+
+**Estado:** vigente
+
+**Contexto.** La lista de columnas del documento no existía como constante: estaba repartida a mano
+en cinco lugares de `render.ts` (anchos en milímetros, `totalCols = 4 + puntos.length + 1`, el
+`<colgroup>`, la fila de `<th>` y los `<td>` de cada renglón). D-15 ya documenta el defecto que
+produce cuando esos cinco conteos se desincronizan: con dos sub-columnas por punto, `totalCols` se
+quedaba corto y todo lo de ancho completo —logo, título, instrucciones, franjas de sección y pie— se
+cortaba a dos tercios de la hoja. Se pidió que Ubicación y Referencia fueran opcionales por formato
+(verificado que en hidrantes exteriores `ubicacion` está capturada en 0 de 33 elementos: la columna
+ocupaba 18mm sin contenido) y que Tipo apareciera sólo en los sistemas con diccionario. Hacerlo
+condicional sobre los cinco lugares sueltos habría hecho casi seguro que volvieran a desincronizarse.
+
+**Decisión.** `web/lib/rag/columnas.ts` es la única función que decide qué columnas lleva un
+documento, en qué orden y con qué ancho — `columnasDe(doc)`. `render.ts` deriva sus cinco usos de esa
+misma lista; `totalCols` pasa a ser literalmente `columnas.length`, así que los conteos coinciden por
+construcción, no por disciplina del que edite el archivo después. `RenglonRAG` ganó un campo `tipo`
+(la clave del diccionario, ya corta) y `Formato` ganó `columnas: {ubicacion, referencia}`;
+`web/scripts/verificar-rag.ts` arma varios documentos de prueba —incluida la combinación real de RAG
+2.2 (sin ubicación, con referencia y con tipo)— y comprueba que `columnasDe().length`, el `<colgroup>`,
+los `<th>` y los `<td>` de cada renglón den siempre el mismo número; también confirma, al poder
+importar `lib/rag/*` desde un script suelto de Node, que la pureza que pide D-16 se conserva.
+
+**Consecuencias.** Agregar o quitar una columna fija implica un solo cambio, en un solo archivo. El
+costo es indirecto: `elementos.tipo` sólo se imprime cuando `sistemas.tipos` no está vacío, así que un
+sistema sin diccionario puede tener datos en `tipo` que ningún documento muestra — es intencional
+(D-18: botones avisadores queda sin diccionario porque sus 54 elementos comparten el mismo valor), no
+un dato perdido.
+
+**Alternativa descartada.** Mantener las cinco listas sueltas y sólo agregar los `if` necesarios para
+las columnas condicionales. Se descartó de entrada: es exactamente la forma en que el defecto de D-15
+apareció la primera vez, y agregar más condiciones a cinco copias en vez de una sola fuente aumenta,
+no reduce, la probabilidad de que un cambio futuro las desincronice otra vez.
+
+---
+
+## D-20 · El orden de recorrido se calcula; el anclaje manual es la excepción
+
+**Estado:** vigente
+
+**Contexto.** `elementos.orden` era, hasta ahora, la única señal de orden: un contador `1..N` fijado
+al extraer los RAG originales, editable sólo exportando el catálogo a JSON, cambiando el número a
+mano y reimportando. No reflejaba nada del mundo físico —dos hidrantes contiguos podían tener
+cualquier `orden` relativo—, así que el recorrido de captura, el documento RAG y el informe
+fotográfico no tenían ninguna garantía de presentar los elementos en el mismo orden entre sí, ni un
+orden que ayudara de verdad a alguien caminando la planta.
+
+**Decisión.** El orden por defecto se calcula: dentro de cada zona, por `ubicacion` (alfabético
+natural — `localeCompare` con `numeric: true`, para que "H-2" preceda a "H-10") y, en empate o si
+falta, por `nombre`; las ubicaciones vacías van al final. Un elemento con `elementos.orden_anclado`
+no nulo se saca de esa regla: los anclados van primero dentro de su zona, ordenados entre ellos por su
+propio valor, y el resto los sigue con el criterio calculado — una prioridad, no una posición
+intercalada entre huecos, que habría exigido definir qué pasa cuando dos anclajes compiten por el
+mismo lugar o cuando el anclaje excede el tamaño de la lista; ningún elemento tiene todavía
+`orden_anclado` fijado, así que no había un caso real que forzara resolver esa complejidad ahora.
+`web/lib/orden.ts` implementa la regla una sola vez (`compararElementos`, `ordenarDentroDeZona`,
+`compararZonas`) — sin dependencias de Next ni de Supabase, mismo criterio que `lib/estado.ts` y
+`lib/rag/*` — y la usan tanto el documento RAG como el informe fotográfico (D-17), para que un mismo
+elemento aparezca en el mismo lugar relativo en los dos.
+
+**Consecuencias.** En hidrantes exteriores y válvulas subterráneas, donde `ubicacion` no está
+capturada para ningún elemento (0 de 33 y 0 de 50 respectivamente, verificado), el orden calculado cae
+directo al desempate por `nombre` — correcto, pero conviene saberlo antes de ver la lista reordenada
+por primera vez. `elementos.orden` deja de decidir el recorrido; queda en el esquema sin usarse, igual
+que `zona`/`seccion`/`orden_seccion` (D-18) — no se borra en esta migración.
+
+**Actualización (D-21).** El anclaje ya tiene control — "Posición fija" en el editor de elementos de
+`/sistemas/[clave]`. Lo que sigue pendiente es usar `lib/orden.ts` en las consultas de captura
+(`lib/datos.ts`, "guardar y siguiente" de `/capturar`): hoy sólo lo usan el documento RAG y el informe
+fotográfico (D-17); el recorrido de captura sigue por `elementos.orden`. Se dejó fuera de la
+reorganización de pantallas a propósito — toca un flujo que el área usa todos los días, y cambiar su
+orden de recorrido merece su propia verificación de campo, no venir de paso dentro de un cambio más
+grande.
+
+---
+
+## D-21 · De seis entradas a tres, y todo lo configurable dentro de la aplicación
+
+**Estado:** vigente
+
+**Contexto.** El inicio era un menú de seis tarjetas del mismo peso visual, sin distinguir entre lo
+que se usa a diario (Capturar) y lo que se usa una vez al mes (Informe). El encabezado tenía un único
+elemento interactivo —cerrar sesión— así que cinco de las once rutas no tenían ninguna forma de volver
+al inicio salvo el botón atrás del navegador. El "sistema" es la unidad natural de trabajo y estaba
+partido en tres pantallas sin enlace entre sí (`/capturar/[sistema]`, `/catalogo/[sistema]`,
+`/rag/[formato]`), pese a que la relación ya existía en datos (`formatos.sistema_id`); editar la
+plantilla de un sistema no tenía forma de llevar a ver cómo quedaba su documento RAG, ni al revés.
+`ciclos.config` y la tabla `sistemas` no tenían ninguna pantalla de edición: la política de RLS ya lo
+permitía (`0003_rls.sql`), sólo faltaba construirla — `config` sólo se escribía una vez, en el `insert`
+inicial de `cargar_catalogo.py`, y quedaba inmutable el resto del ciclo.
+
+**Decisión.**
+
+- **El inicio pasa a ser el tablero.** Antes vivía en `/tablero`; ahora es `/`, la pantalla de trabajo
+  del día a día en vez de un menú.
+- **`/catalogo/[sistema]` y `/rag/[formato]` se fusionan en `/sistemas/[clave]`**: elementos, plantilla,
+  formato y documento RAG de un mismo sistema, en una sola pantalla. El parámetro de ruta ya era la
+  clave del sistema en el primer caso; en el segundo hay que resolver formato → sistema, y un formato
+  sin sistema asociado no tiene pantalla propia (queda accesible sólo desde Configuración).
+- **`/catalogo` y `/rag` (los índices) se fusionan en `/configuracion`**: Ciclo, Sistemas, Zonas e
+  Importar/exportar, en pestañas de una sola pantalla. Es la primera vez que `ciclos.config` y
+  `sistemas` se pueden editar desde la aplicación — antes exigían Python o el panel de Supabase
+  directamente.
+- **Barra de navegación real** en el encabezado (`web/components/NavBar.tsx`): Tablero, Capturar,
+  Recepción, Configuración — resalta la ruta activa. `/informe` se conserva como pantalla aparte
+  —se genera una vez al mes, no todos los días— y se alcanza con un enlace desde el tablero.
+- **Redirecciones** en las cinco rutas viejas (`/catalogo`, `/catalogo/[sistema]`, `/rag`,
+  `/rag/[formato]`, `/tablero`), para que un enlace guardado o un marcador no rompan.
+
+**Componentes compartidos primero.** Antes de mover pantallas se extrajeron a `web/components/` los
+patrones que estaban copiados a mano: `Aviso` (banner de error/ámbar/éxito, 8 copias literales),
+`PanelVistaPrevia`/`PanelExito` (la máquina "vista previa → confirmar → aplicado", 5 copias),
+`SinCiclo` (5 copias), `Campo`/`CampoTexto`/`CampoSelect` (4 variantes) y `BuscadorLista` (3 copias).
+Reorganizar pantallas sin extraerlos primero habría multiplicado las copias en vez de reducirlas.
+
+**Alcance deliberadamente acotado.** "Un solo bloque" para importar/exportar (RF-24) se cumple en el
+sentido de ubicación —un solo lugar en la pantalla— pero no se rediseñó el formato de intercambio: el
+catálogo y los formatos se siguen importando por separado, reutilizando tal cual la conciliación ya
+probada de D-14 (por sistema y código) y la de formatos (por clave). Diseñar un solo archivo que cubra
+config + zonas + sistemas + catálogo + plantillas + formatos a la vez habría exigido versionar un
+formato de intercambio nuevo bajo el mismo cambio que ya movía la mitad de las pantallas de la
+aplicación — se dejó fuera. Zonas y sistemas no tienen importación propia: al ser catálogos chicos
+(17 zonas, 5 sistemas) y ya editables uno por uno en pantalla, sólo llevan exportación de respaldo.
+**Abrir un ciclo nuevo** (Flujo 1: clonar el catálogo del ciclo anterior) tampoco se construyó — sigue
+siendo `cargar_catalogo.py`; es una operación de una vez al mes, bastante más compleja que editar un
+ciclo ya abierto, y no bloqueaba nada de lo demás.
+
+**Consecuencias.** Ocho archivos de pantalla se dieron de baja (`catalogo/{page,CatalogoIndex,actions}.tsx`,
+`catalogo/[sistema]/{page,actions,PlantillaEditor,ElementosCatalogo}.tsx`, `rag/{page,actions,RagIndex}.tsx`,
+`rag/[formato]/{page,FormatoEditor,VisorRAG}.tsx`, `tablero/{page,Tablero}.tsx`) y se reemplazaron por
+cinco (`sistemas/[clave]/{page,actions,PlantillaEditor,ElementosCatalogo,FormatoEditor,VisorRAG}.tsx`,
+`configuracion/{page,actions,Configuracion,PanelCiclo,PanelSistemas,PanelZonas,PanelImportarExportar}.tsx`,
+más `page.tsx`/`Tablero.tsx` en la raíz de `(app)`) — más archivos porque cada uno quedó más chico y
+enfocado, no menos. `ElementosCatalogo.tsx` cambió de fondo, no sólo de lugar: `zona`/`seccion` como
+texto libre se sustituyeron por un selector sobre el catálogo de zonas (D-18), y `tipo` por un selector
+sobre el diccionario del sistema — ya no se puede escribir una zona o un tipo que no exista en el
+catálogo correspondiente.

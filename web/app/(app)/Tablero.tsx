@@ -137,7 +137,12 @@ export function Tablero({
 
   return (
     <div>
-      <h1 className="text-2xl text-vw-deep-space">Tablero</h1>
+      <div className="flex items-baseline justify-between">
+        <h1 className="text-2xl text-vw-deep-space">Tablero</h1>
+        <Link href="/informe" className="text-sm text-vw-vivid-green hover:underline">
+          Generar informe →
+        </Link>
+      </div>
       <p className="mt-1 text-sm text-vw-dsb-60">{ciclo.nombre}</p>
 
       <section className="mt-6">

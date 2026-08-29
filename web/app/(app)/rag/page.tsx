@@ -1,22 +1,7 @@
-import { createClient } from "@/lib/supabase/server";
-import { obtenerCicloAbierto, obtenerFormatos, obtenerSistemas } from "@/lib/datos";
-import { RagIndex } from "./RagIndex";
+import { redirect } from "next/navigation";
 
-export default async function RagIndexPage() {
-  const supabase = await createClient();
-  const [ciclo, formatos, sistemas] = await Promise.all([
-    obtenerCicloAbierto(supabase),
-    obtenerFormatos(supabase),
-    obtenerSistemas(supabase),
-  ]);
-
-  const nombrePorSistemaId = Object.fromEntries(sistemas.map((s) => [s.id, s.nombre]));
-
-  return (
-    <RagIndex
-      ciclo={ciclo ? { nombre: ciclo.nombre } : null}
-      formatos={formatos}
-      nombrePorSistemaId={nombrePorSistemaId}
-    />
-  );
+// El índice de formatos RAG pasó a ser Configuración → Importar y
+// exportar — ver docs/decisiones.md D-21.
+export default function RagRedirect() {
+  redirect("/configuracion");
 }

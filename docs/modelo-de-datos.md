@@ -64,6 +64,7 @@ Catálogo fijo de los cinco sistemas contra incendio que cubre la revisión mens
 | `rag` | text | sí | Formato asociado. Ejemplo: `RAG 2.3` |
 | `orden` | smallint | no | Orden de presentación en la interfaz |
 | `activo` | boolean | no | Permite ocultar un sistema sin borrarlo |
+| `tipos` | jsonb | no | Diccionario de tipos del sistema: `[{clave, nombre}]`. Vacío = el sistema no distingue tipos y la columna Tipo del RAG no se dibuja. Ver §3.6 y docs/decisiones.md D-18 |
 
 Valores iniciales:
 
@@ -103,20 +104,27 @@ Define **qué se revisa**. Es el catálogo del ciclo.
 | `sistema_id` | uuid | no | Referencia a `sistemas` |
 | `codigo` | text | no | **Identificador único del elemento**, asignado por el área. Ejemplo: `AV-Z1-101` |
 | `nombre` | text | no | Rótulo que lleva en campo. Ejemplo: `ELEM. 101` |
-| `zona` | text | sí | Zona o nave. Ejemplo: `Zona 1 · Nave producción` |
-| `ubicacion` | text | sí | Coordenada o referencia física. Ejemplo: `G 2 - 0.1 Planta alta` |
-| `tipo` | text | sí | Tipo del dispositivo. Ejemplos: `HMS-D`, `MARIPOSA`, `VASTAGO`, `P`, `G` |
+| `ubicacion` | text | sí | Coordenada o referencia física. Ejemplo: `A01-02` |
+| `tipo` | text | sí | Clave del diccionario `sistemas.tipos` del elemento (p. ej. `G`), no el nombre completo. Ver docs/decisiones.md D-18 |
 | `responsable` | text | sí | Persona asignada en el reparto del ciclo |
 | `item_rag` | smallint | sí | Número de renglón en el formato RAG, para conciliar |
-| `orden` | integer | no | Orden de recorrido dentro del sistema |
+| `orden` | integer | no | Heredado de la extracción original; ya no decide el recorrido — ver `orden_anclado` y §3.6 |
 | `activo` | boolean | no | Falso retira el elemento del ciclo sin borrar lo capturado |
 | `notas` | text | sí | Observaciones del catálogo, no de la revisión |
-| `referencia` | text | sí | Ayuda corta a la ubicación (≤5 palabras), para distinguir elementos próximos o similares. Columna fija del documento RAG |
-| `seccion` | text | sí | Agrupador del documento RAG. Campo propio del catálogo — no se deriva de `zona` ni de `ubicacion`, para que el área pueda agrupar como convenga |
-| `orden_seccion` | smallint | sí | Orden de la sección dentro del documento |
+| `referencia` | text | sí | Ayuda corta a la ubicación (≤5 palabras), para distinguir elementos próximos o similares. Columna opcional del documento RAG — ver `formatos.columnas` |
+| `zona_id` | uuid | sí | Referencia a `zonas` (§2.9). Agrupador vigente del documento RAG y del informe fotográfico. `null` = todavía sin asignar |
+| `orden_anclado` | smallint | sí | Cuando no es `null`, fija la posición del elemento dentro de su zona en vez de calcularla — ver §3.6 |
+| `zona` | text | sí | **Sustituido por `zona_id`** (docs/decisiones.md D-18). Se conserva sin leerse |
+| `seccion` | text | sí | **Sustituido por `zona_id`** (era el agrupador de D-15). Se conserva sin leerse |
+| `orden_seccion` | smallint | sí | **Sustituido por `zonas.orden`**. Se conserva sin leerse |
 
 Restricción: `codigo` único por `(ciclo_id, sistema_id, codigo)` — dentro de su sistema, no en todo
 el ciclo.
+
+> `zona`, `seccion` y `orden_seccion` quedaron en el esquema sin usarse a propósito: la cadena de
+> migraciones de este repositorio no se puede reconstruir desde cero sobre una base limpia (ver
+> docs/decisiones.md D-18), así que borrar columnas se dejó para una migración aparte, ya con los
+> datos de `zona_id` verificados.
 
 > **Por qué el identificador va separado del rótulo.** En los datos actuales el número rotulado no
 > identifica al elemento: el RAG 2.4 repite `ELEM. 101` en las zonas 1, 2 y 3, y en las carpetas de
@@ -202,10 +210,26 @@ fuentes en un solo `DocumentoRAG` al generar.
 | `revision` | text | sí | Va al pie, junto con `documento_referencia` |
 | `instrucciones` | jsonb | no | Sólo las instrucciones **propias** de este formato (p. ej. "P = Pie, G = Gabinete" en RAG 2.2). La instrucción general no se repite aquí — se concatena al generar. Ver §3.4 |
 | `notas` | text | sí | Discrepancias del documento de origen frente al proceso real, señaladas sin resolver — mismo criterio que `elementos.notas` |
+| `columnas` | jsonb | no | `{ubicacion, referencia}` — qué columnas opcionales lleva este documento. Id, Numeración, Tipo (si el sistema lo tiene), los puntos y Observaciones no son opcionales. Ver docs/decisiones.md D-19 |
 | `creado` | timestamptz | no | Alta del formato |
 | `actualizado` | timestamptz | no | Última modificación |
 
 Restricciones: único por `(nombre, periodicidad)` y único por `clave`.
+
+### 2.9 `zonas`
+
+Catálogo único de la planta: no cuelga de `ciclos` ni de `sistemas`, para que un elemento de
+hidrantes exteriores y uno de válvulas subterráneas puedan compartir zona cuando están co-ubicados.
+Sustituye a `elementos.zona`/`seccion`/`orden_seccion` (D-15) — ver docs/decisiones.md D-18.
+
+| Campo | Tipo | Nulo | Descripción |
+|---|---|---|---|
+| `id` | uuid | no | Llave primaria |
+| `clave` | text | no | Identificador técnico. Único. Ejemplo: `calle-1-seccionamiento` |
+| `nombre` | text | no | Forma corta — lo que imprime el documento RAG en su columna de zona. Ejemplo: `Calle 1 · Seccionamiento` |
+| `descripcion` | text | sí | Contexto adicional, sólo para pantalla — no se imprime |
+| `orden` | smallint | no | Orden de presentación entre zonas. Sustituye a `elementos.orden_seccion` |
+| `activo` | boolean | no | Permite retirar una zona sin borrarla |
 
 ---
 
@@ -362,6 +386,25 @@ Lo que se importa y exporta desde la pantalla de catálogo:
 La importación concilia por `(sistema, codigo)`: lo que existe se actualiza, lo que no existe se da
 de alta, y lo que ya no aparece en el archivo se marca `activo = false` en lugar de borrarse.
 
+> Este formato de intercambio todavía usa `zona`/`seccion`/`orden_seccion`, no `zona_id`/`tipo`-como-
+> clave. La pantalla de edición (`/sistemas/[clave]`) ya usa los campos de §2.9 y §3.6 — sólo el JSON
+> de importar/exportar (`/configuracion → Importar y exportar`) se quedó en la forma vieja, a
+> propósito: rediseñar el formato de intercambio quedó fuera de la reorganización de pantallas. Ver
+> docs/decisiones.md D-18 y D-21.
+
+### 3.6 El orden de recorrido
+
+No es un campo, es una regla — `web/lib/orden.ts` (ver docs/decisiones.md D-20). Dentro de una zona:
+
+1. Los elementos con `orden_anclado` no nulo van primero, ordenados entre ellos por ese valor.
+2. El resto se ordena por `ubicacion` (alfabético natural — `H-2` antes que `H-10`) y, en empate o si
+   falta, por `nombre`.
+
+Las zonas entre sí se ordenan por `zonas.orden`; una zona sin `orden` conocido (o "Sin zona", para un
+elemento con `zona_id` nulo) va al final, alfabética. La misma función ordena el documento RAG
+(dentro de cada sección) y el informe fotográfico — así un elemento aparece en el mismo lugar
+relativo en los dos.
+
 ---
 
 ## 4. Derivación del estado
@@ -428,7 +471,9 @@ Volumen estimado: 221 elementos × 2 fotografías × 1 MB ≈ 440 MB por ciclo.
 | `sistemas.clave` | único | Referencia estable desde configuración y plantillas |
 | `plantillas (ciclo_id, sistema_id)` | único | Una plantilla por sistema y ciclo |
 | `elementos (ciclo_id, sistema_id, codigo)` | único | Identificador único dentro de su sistema |
-| `elementos (ciclo_id, sistema_id, orden)` | índice | Orden de recorrido |
+| `elementos (ciclo_id, sistema_id, orden)` | índice | Consulta por sistema; el orden de recorrido real lo calcula §3.6, no esta columna |
+| `zonas.clave` | único | Referencia estable desde importación de catálogo |
+| `elementos.zona_id` | referencia a `zonas`, `on delete restrict` | No se puede borrar una zona con elementos asignados |
 | `registros.elemento_id` | único | Un registro por elemento |
 | `registros (estado)` | índice | Consultas del tablero |
 | `fotos (registro_id, momento, orden)` | índice | Armado del formulario y del collage |

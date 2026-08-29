@@ -3,11 +3,12 @@
 // después) es responsabilidad de quien llama. Esa pureza es lo que hace
 // posible una segunda entrada local sin rehacer el renderizador (ver
 // docs/decisiones.md D-16).
-import type { Formato, PuntoDef, ValorPunto } from "../tipos";
+import { compararZonas, ordenarDentroDeZona, type ElementoParaOrdenar } from "../orden";
+import type { Formato, PuntoDef, TipoDiccionario, ValorPunto } from "../tipos";
 import { CIERRE_ESTANDAR, CLASIFICACION, DOMICILIO, INSTRUCCION_GENERAL, RAZON_SOCIAL } from "./constantes";
 import type { DocumentoRAG, ModoDocumentoRAG, RenglonRAG, SeccionRAG } from "./tipos";
 
-const SIN_SECCION = "Sin sección";
+const SIN_ZONA = "Sin zona";
 
 /** El slug de ruta para /rag/[formato]. 'RAG 2.3' -> 'RAG-2.3'. Ninguna
  * clave actual trae guiones, así que la conversión es reversible; si
@@ -26,10 +27,18 @@ export interface ElementoParaDocumento {
   numeracion: string;
   ubicacion: string | null;
   referencia: string | null;
-  seccion: string | null;
-  ordenSeccion: number | null;
-  /** Orden de recorrido dentro de su sistema (elementos.orden). Decide el
-   * orden de los renglones dentro de su sección. */
+  /** Clave del diccionario de tipos del sistema ("G"), no el nombre
+   * completo — ver docs/decisiones.md D-18. */
+  tipo: string | null;
+  /** zonas.nombre del elemento (ya resuelta por quien llama, vía
+   * elementos.zona_id) — null si todavía no se le asignó zona. */
+  zona: string | null;
+  /** zonas.orden de esa misma zona. */
+  zonaOrden: number | null;
+  /** Fija la posición del elemento dentro de su zona — ver web/lib/orden.ts. */
+  ordenAnclado: number | null;
+  /** Orden heredado (elementos.orden); desempate cuando no hay ubicación
+   * ni nombre que distingan dos elementos. */
   orden: number;
 }
 
@@ -46,6 +55,9 @@ export interface EntradaDocumentoRAG {
   formato: Formato;
   /** Puntos de la plantilla vigente del sistema. */
   puntos: PuntoDef[];
+  /** Diccionario de tipos del sistema de este formato — ver
+   * docs/decisiones.md D-18. Vacío = la columna Tipo no se dibuja. */
+  tipos: TipoDiccionario[];
   elementos: ElementoParaDocumento[];
   /** Ausente o vacío ⇒ modo vacío (documento en blanco, para llenar a mano). */
   respuestas?: RespuestaParaDocumento[];
@@ -57,44 +69,31 @@ export interface EntradaDocumentoRAG {
 }
 
 /**
- * Agrupa elementos por 'seccion' y calcula el orden de cada grupo.
- *
- * El orden de una sección se toma de 'orden_seccion' de sus propios
- * elementos — no hay una tabla de secciones aparte (ver
- * docs/decisiones.md D-15: campo propio del catálogo). Si dos elementos
- * de la misma sección traen 'orden_seccion' distinto, se usa el primero no
- * nulo que aparezca: es una inconsistencia de captura, no algo que este
- * armado deba resolver por su cuenta. Una sección sin 'orden_seccion' en
- * ninguno de sus elementos no se pierde: queda al final, ordenada por
- * nombre.
+ * Agrupa elementos por 'zona' y calcula el orden de cada grupo a partir
+ * de 'zonaOrden' — propiedad del catálogo de zonas, no de cada elemento
+ * (ver docs/decisiones.md D-18: sustituye a 'orden_seccion', que sí vivía
+ * por elemento y podía discrepar dentro de un mismo grupo). Un elemento
+ * sin zona cae en "Sin zona", que se ordena al final junto con cualquier
+ * otra zona sin 'orden' conocido.
  */
-export function agruparPorSeccion(elementos: ElementoParaDocumento[]): [string, ElementoParaDocumento[]][] {
-  const ordenPorNombre = new Map<string, number | null>();
-  const elementosPorNombre = new Map<string, ElementoParaDocumento[]>();
-
+export function agruparPorZona(elementos: ElementoParaDocumento[]): [string, ElementoParaDocumento[]][] {
+  const grupos = new Map<string, ElementoParaDocumento[]>();
   for (const el of elementos) {
-    const nombre = el.seccion?.trim() || SIN_SECCION;
-    if (!elementosPorNombre.has(nombre)) {
-      elementosPorNombre.set(nombre, []);
-      ordenPorNombre.set(nombre, el.ordenSeccion);
-    } else if (ordenPorNombre.get(nombre) === null && el.ordenSeccion !== null) {
-      ordenPorNombre.set(nombre, el.ordenSeccion);
-    }
-    elementosPorNombre.get(nombre)!.push(el);
+    const nombre = el.zona?.trim() || SIN_ZONA;
+    if (!grupos.has(nombre)) grupos.set(nombre, []);
+    grupos.get(nombre)!.push(el);
   }
 
-  return [...elementosPorNombre.entries()].sort(([nombreA], [nombreB]) => {
-    const ordenA = ordenPorNombre.get(nombreA) ?? null;
-    const ordenB = ordenPorNombre.get(nombreB) ?? null;
-    if (ordenA !== null && ordenB !== null && ordenA !== ordenB) return ordenA - ordenB;
-    if (ordenA !== null && ordenB === null) return -1;
-    if (ordenA === null && ordenB !== null) return 1;
-    return nombreA.localeCompare(nombreB, "es");
-  });
+  return [...grupos.entries()].sort(([nombreA, elsA], [nombreB, elsB]) =>
+    compararZonas(
+      { nombre: nombreA, orden: elsA[0]?.zonaOrden ?? null },
+      { nombre: nombreB, orden: elsB[0]?.zonaOrden ?? null },
+    ),
+  );
 }
 
 export function armarDocumentoRAG(entrada: EntradaDocumentoRAG): DocumentoRAG {
-  const { formato, elementos, respuestas = [], cicloClave = null, cicloNombre = null } = entrada;
+  const { formato, tipos, elementos, respuestas = [], cicloClave = null, cicloNombre = null } = entrada;
   // Defensivo: 'observaciones' ya no debería llegar como punto de
   // plantilla (ver docs/decisiones.md D-15), pero si una plantilla vieja
   // todavía lo trajera, no se duplica la columna fija.
@@ -103,25 +102,35 @@ export function armarDocumentoRAG(entrada: EntradaDocumentoRAG): DocumentoRAG {
   const respuestaPorElemento = new Map(respuestas.map((r) => [r.elementoId, r]));
 
   let contador = 0;
-  const secciones: SeccionRAG[] = agruparPorSeccion(elementos).map(([nombre, elementosSeccion]) => {
-    const renglones: RenglonRAG[] = [...elementosSeccion]
-      .sort((a, b) => a.orden - b.orden)
-      .map((el) => {
-        contador += 1;
-        const respuesta = respuestaPorElemento.get(el.id);
-        return {
-          id: contador,
-          elementoId: el.id,
-          numeracion: el.numeracion,
-          // Vacío ≠ "Exterior": vacío es "todavía no se capturó", Exterior
-          // es un valor real que el catálogo debe traer explícito (ver
-          // scripts/extraer_rags.py). No se adivina aquí.
-          ubicacion: el.ubicacion?.trim() ?? "",
-          referencia: el.referencia?.trim() ?? "",
-          valores: respuesta?.valores ?? {},
-          observaciones: respuesta?.observaciones?.trim() ?? "",
-        };
-      });
+  const secciones: SeccionRAG[] = agruparPorZona(elementos).map(([nombre, elementosZona]) => {
+    const ordenados = ordenarDentroDeZona(
+      elementosZona.map(
+        (el): ElementoParaOrdenar & { el: ElementoParaDocumento } => ({
+          id: el.id,
+          ubicacion: el.ubicacion,
+          nombre: el.numeracion,
+          ordenAnclado: el.ordenAnclado,
+          el,
+        }),
+      ),
+    );
+    const renglones: RenglonRAG[] = ordenados.map(({ el }) => {
+      contador += 1;
+      const respuesta = respuestaPorElemento.get(el.id);
+      return {
+        id: contador,
+        elementoId: el.id,
+        numeracion: el.numeracion,
+        // Vacío ≠ "Exterior": vacío es "todavía no se capturó", Exterior
+        // es un valor real que el catálogo debe traer explícito (ver
+        // scripts/extraer_rags.py). No se adivina aquí.
+        ubicacion: el.ubicacion?.trim() ?? "",
+        referencia: el.referencia?.trim() ?? "",
+        tipo: el.tipo?.trim() ?? "",
+        valores: respuesta?.valores ?? {},
+        observaciones: respuesta?.observaciones?.trim() ?? "",
+      };
+    });
     return { nombre, renglones };
   });
 
@@ -145,6 +154,8 @@ export function armarDocumentoRAG(entrada: EntradaDocumentoRAG): DocumentoRAG {
     instrucciones: [INSTRUCCION_GENERAL, ...formato.instrucciones],
     cierre: CIERRE_ESTANDAR,
     puntos,
+    columnas: formato.columnas,
+    tipos,
     secciones,
     totalRenglones: contador,
     cicloClave,
