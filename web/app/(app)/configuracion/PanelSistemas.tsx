@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Aviso } from "@/components/Aviso";
 import { BotonPrimario, BotonSecundario } from "@/components/Boton";
 import { CampoTexto } from "@/components/Campo";
@@ -77,12 +78,8 @@ export function PanelSistemas({ sistemas: sistemasIniciales }: Props) {
                 />
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => setEditandoId(s.id)}
-                className={`flex w-full items-center justify-between gap-3 px-1 py-3 text-left ${s.activo ? "" : "opacity-50"}`}
-              >
-                <div>
+              <div className={`flex items-center justify-between gap-3 px-1 py-3 ${s.activo ? "" : "opacity-50"}`}>
+                <button type="button" onClick={() => setEditandoId(s.id)} className="min-w-0 flex-1 text-left">
                   <p className="font-medium text-vw-deep-space">
                     {s.nombre} {s.rag && <span className="text-xs text-vw-dsb-60">· {s.rag}</span>}
                   </p>
@@ -91,8 +88,11 @@ export function PanelSistemas({ sistemas: sistemasIniciales }: Props) {
                     {s.tipos.length > 0 && ` · tipos: ${s.tipos.map((t) => t.clave).join(", ")}`}
                     {!s.activo && " · inactivo"}
                   </p>
-                </div>
-              </button>
+                </button>
+                <Link href={`/sistemas/${s.clave}`} className="shrink-0 text-sm text-vw-vivid-green hover:underline">
+                  Elementos y RAG →
+                </Link>
+              </div>
             )}
           </li>
         ))}
