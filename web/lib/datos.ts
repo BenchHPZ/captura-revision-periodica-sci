@@ -248,6 +248,7 @@ export interface ElementoParaInforme {
     que_se_realizo: string | null;
     pendientes: string | null;
     valores: Record<string, ValorPunto>;
+    estado: Estado;
     fotos: { id: string; momento: string; ruta: string; orden: number }[];
   } | null;
 }
@@ -264,7 +265,7 @@ export async function obtenerElementosParaInforme(
   const { data, error } = await supabase
     .from("elementos")
     .select(
-      "id, codigo, nombre, ubicacion, referencia, tipo, responsable, orden_anclado, orden, zona:zonas(nombre, orden), registro:registros(id, como_se_encontro, que_se_realizo, pendientes, valores, fotos(id, momento, ruta, orden))",
+      "id, codigo, nombre, ubicacion, referencia, tipo, responsable, orden_anclado, orden, zona:zonas(nombre, orden), registro:registros(id, como_se_encontro, que_se_realizo, pendientes, valores, estado, fotos(id, momento, ruta, orden))",
     )
     .eq("ciclo_id", cicloId)
     .eq("sistema_id", sistemaId)

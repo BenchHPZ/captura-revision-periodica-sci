@@ -504,7 +504,8 @@ que el archivo dijera nada sobre ellos.
 
 ## D-17 · El informe fotográfico se genera en el servidor, en TypeScript
 
-**Estado:** vigente
+**Estado:** vigente — revisada a fondo tras contrastarla con el entregable real (ver la revisión al
+final de esta decisión)
 
 **Contexto.** D-04 fijó el generador como un programa local en Python porque necesitaba la plantilla
 corporativa, las fuentes institucionales y PowerPoint para revisar el resultado antes de entregarlo.
@@ -577,6 +578,80 @@ imágenes con cinco acomodos distintos según cantidad y orientación, algo que 
 resuelve sin escribir un motor de maquetación de imágenes propio —justo lo contrario del caso RAG,
 donde una tabla con `<thead>/<tfoot>` resuelve la paginación de forma nativa—, y D-04 exige revisar el
 resultado abierto en PowerPoint antes de entregarlo, no sólo poder verlo.
+
+### Revisión — el generador no reproducía el entregable real
+
+Esta decisión se dio por terminada sin abrir jamás el resultado en PowerPoint. El propio README lo
+anotaba como pendiente, y esa omisión escondía un defecto que ninguna comprobación automática podía
+ver: **el texto salía invisible**. El layout `Elemento` hereda del master `bg2 → dk2 = #002733`, así
+que el fondo es Deep Space Blue; el generador escribía todo el texto en `#002733`, el mismo color.
+Cada diapositiva salía con el collage sobre azul oscuro y nada más. `tsc`, `eslint` y `next build`
+pasaban limpios, y el conteo de diapositivas y de fotografías cuadraba — nada de eso mira un color
+contra otro.
+
+Al contrastarlo con el entregable aprobado (`Informe_Reporte_Marzo2026.pptx`, 220 diapositivas)
+aparecieron más divergencias de fondo:
+
+- **Otra plantilla.** El entregable real se arma sobre `Reporte sistemas.pptx`, que trae ocho
+  diapositivas base —intro, portada, agenda y **cinco divisores de capítulo ya redactados** con su
+  `– RAG 2.x`, en el mismo orden que `sistemas.orden`—. El generador usaba
+  `Reporte sistemas - MASTER.pptx` y las descartaba todas. Las dos plantillas además **no son
+  intercambiables**: la imagen mide 7.19" contra 6.67" y la columna de texto 5.13" contra 5.91", así
+  que las coordenadas, medidas del MASTER, tampoco encajaban.
+- **Pie de página de otro ciclo.** Clonaba la diapositiva 10 del MASTER, que es una muestra con el pie
+  ya poblado: las 224 diapositivas salían con `KSU X` y la fecha `03.2026`. Las diapositivas de
+  elemento del entregable real no llevan pie.
+- **Colores fuera de marca.** `#E5484D` y `#E8E8E8` no existen en la paleta VW (son de Radix UI); el
+  rojo de marca es `#DA0C1F` y el gris `#E5E9EB`. Y el relleno `#C2FE06` de las celdas "SI" rompía la
+  regla crítica de la marca —Electric Neon nunca sobre fondo claro— aunque, por la ironía del fondo
+  oscuro real, el color sí era el correcto y lo equivocado era suponer el fondo blanco.
+- **Sin tipografía.** No declaraba ninguna `fontFace`, así que salía la de PptxGenJS en vez de
+  `The Group HEAD Light` / `The Group TEXT`.
+
+**Correcciones.** Se cambió a `Reporte sistemas.pptx`, con las coordenadas y la tipografía medidas del
+entregable real; todo el texto pasa a claro sobre el fondo oscuro; los colores salen de la paleta; la
+respuesta SI/NO/NA se pinta **como color de texto y no como relleno**, igual que ya lo hace el
+documento RAG (`lib/rag/estilos.ts`), para que el mismo dato se vea igual en los dos entregables; y el
+collage pasa de `cover` a `contain`, que recortaba ~6% del ancho.
+
+**Un paso nuevo, y por qué.** `pptx-automizer` sólo sabe clonar diapositivas **que ya existen**
+(`addSlide(plantilla, identificador)`); no puede crear una a partir de un layout. Y
+`Reporte sistemas.pptx` no trae ninguna diapositiva de `Elemento`. Por eso
+`scripts/preparar_plantilla_informe.py` produce `Plantilla_Informe.pptx`: la corporativa más una
+novena diapositiva que sirve de molde. Es un paso reproducible y verificable, no un binario
+aparecido de la nada.
+
+**El armado por sistema se retiró.** La partición en un `.pptx` por sistema se había introducido
+suponiendo que acumular diapositivas en una sola instancia era lo que disparaba el tiempo. Medirlo
+mostró que no: 221 diapositivas en una instancia tardan unos tres segundos, y el costo real —dos
+minutos y medio— es descargar las fotografías y componer los collages. A cambio, esa partición
+introdujo un defecto sutil que sólo se vio al inspeccionar el `.pptx` generado: **el identificador de
+`addSlide` es el número del archivo XML de la diapositiva, no su posición en el mazo**, y como
+`removeExistingSlides` deja huérfanos los `slide1..9.xml` de la plantilla, pedir las diapositivas
+`1..N` de un archivo de parte devolvía las de la plantilla — el informe salía con la portada repetida
+seis veces y cuarenta elementos de menos. Al armar en una sola pasada, en el orden final, el problema
+desaparece y el código queda más corto.
+
+**Segunda pasada, ya con el archivo a la vista.** Abrirlo destapó dos cosas más que sólo se ven
+mirando. La primera: la diapositiva molde conservaba los **placeholders del layout con su texto de
+ejemplo dentro** —"Título en Deep Space Blue", "Click para editar el texto"—, que no es un texto guía
+sino contenido real, y salía impreso debajo de lo que dibuja el generador. `preparar_plantilla_informe.py`
+ahora los retira: como el generador dibuja todo por su cuenta, no hacen falta para nada; el fondo, el
+logo y los adornos vienen del layout, no de ellos. La segunda: los bloques se calculaban unos a partir
+de otros —la tabla arrancaba debajo de un texto de largo variable, estimando su altura por conteo de
+caracteres— así que con un comentario largo se encimaban.
+
+**El acomodo pasa a posiciones fijas.** Tres bloques, cada uno con su subtítulo en el estilo de la
+plantilla: *Tabla de características* justo bajo el título, *Observaciones* en medio y *Datos del
+sistema* anclado al margen inferior. Que el bloque de datos traiga **siempre los mismos siete
+renglones**, con una raya donde falte el dato, es lo que permite anclarlo abajo con altura conocida;
+y que las observaciones se encojan (`fit: "shrink"`) en vez de crecer es lo que impide que un
+comentario largo vuelva a invadir lo de abajo. Nada se calcula a partir del largo de otra cosa.
+
+**Lo que hay que sostener.** Verificar este generador significa abrir el archivo en PowerPoint. El
+conteo de diapositivas, `tsc` y el build no detectan un texto invisible, un pie de otro ciclo, una
+portada repetida ni dos bloques encimados — los cuatro defectos aparecieron mirando el resultado, no
+compilando.
 
 ---
 

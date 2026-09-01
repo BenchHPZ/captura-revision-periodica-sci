@@ -161,9 +161,15 @@ npx --prefix web supabase db push
 cd web && npx tsx scripts/cargar-formatos.ts                 # valida y resume; nada se escribe todavía
 npx tsx scripts/cargar-formatos.ts --confirmar
 
-# 6. Plantilla del informe: una sola vez, no depende de ningún ciclo (ver D-17)
-npx tsx scripts/subir-plantilla-informe.ts --archivo "<ruta a Reporte sistemas - MASTER.pptx>"
-npx tsx scripts/subir-plantilla-informe.ts --archivo "<ruta al .pptx>" --confirmar
+# 6. Plantilla del informe: una sola vez, no depende de ningún ciclo (ver D-17).
+#    Primero se le agrega a la plantilla corporativa la diapositiva que sirve
+#    de molde — pptx-automizer sólo sabe clonar diapositivas que ya existen.
+cd ..
+python scripts/preparar_plantilla_informe.py \
+  --origen "<ruta a Reporte sistemas.pptx>" --destino "<ruta a Plantilla_Informe.pptx>"
+cd web
+npx tsx scripts/subir-plantilla-informe.ts --archivo "<ruta a Plantilla_Informe.pptx>"
+npx tsx scripts/subir-plantilla-informe.ts --archivo "<ruta a Plantilla_Informe.pptx>" --confirmar
 cd ..
 
 # 7. Catálogo del ciclo: extraer de los RAG y cargar a Supabase
@@ -200,7 +206,8 @@ archivo `.env` que no se versiona.
 | `npm run lint` | Revisión de estilo (`eslint .`; `next lint` ya no existe desde Next 16) |
 | `npx supabase db push` | Aplica las migraciones pendientes (dentro de `web/`, con el proyecto enlazado) |
 | `npx tsx scripts/cargar-formatos.ts [--confirmar]` | (dentro de `web/`) `formatos_mensuales.json` → Supabase. Una sola vez, no por ciclo. Sin `--confirmar` sólo valida |
-| `npx tsx scripts/subir-plantilla-informe.ts --archivo <ruta> [--confirmar]` | (dentro de `web/`) Sube la plantilla corporativa al depósito. Una sola vez, o cuando cambie el archivo. Sin `--confirmar` sólo valida |
+| `python scripts/preparar_plantilla_informe.py --origen <corporativa> --destino <plantilla>` | `Reporte sistemas.pptx` + la diapositiva molde de `Elemento` → `Plantilla_Informe.pptx` |
+| `npx tsx scripts/subir-plantilla-informe.ts --archivo <ruta> [--confirmar]` | (dentro de `web/`) Sube `Plantilla_Informe.pptx` al depósito. Una sola vez, o cuando cambie. Sin `--confirmar` sólo valida |
 | `python scripts/extraer_rags.py --formatos <carpeta> --ciclo <AAAA-MM>` | RAG en PDF → catálogo y plantillas en JSON |
 | `python scripts/cargar_catalogo.py --ciclo <AAAA-MM> [--confirmar]` | Ese JSON → Supabase. Sin `--confirmar` sólo valida |
 
@@ -220,7 +227,7 @@ dependan de ellas.
 | 3 | Recepción y clasificación de evidencia externa | Código listo; falta probarlo con fotos reales |
 | 4 | Tablero de seguimiento | Código listo; falta probarlo con datos reales |
 | 5 | Editor de catálogo y de plantillas | Código listo; falta probarlo con datos reales |
-| 6 | Generador del informe mensual | Código listo; falta medir el ciclo completo y probar la plantilla `MASTER` en PowerPoint |
+| 6 | Generador del informe mensual | Rehecho contra el entregable real y verificado sobre el ciclo completo; falta abrirlo en PowerPoint |
 | 7 | Archivado del ciclo y liberación del depósito | Pendiente |
 
 Dentro de la fase 1: las migraciones, la aplicación Next.js con inicio/cierre de sesión, y los dos
@@ -298,23 +305,41 @@ entrada (un generador local para cuando D-10 lo exija) queda diseñada pero sin 
 
 Dentro de la fase 6 (D-17): `/informe` genera el informe fotográfico mensual con un botón, corriendo
 en el servidor con la sesión normal del usuario — no un script local, como se planeó al principio de
-la fase, sino lo que se pidió al retomarla. Una diapositiva por elemento activo, en el orden
-sistema → sección → elemento (misma regla de agrupación que `/rag`, reutilizada tal cual), sobre la
-plantilla corporativa `Reporte sistemas - MASTER.pptx` — subida al depósito con
-`subir-plantilla-informe.ts`, no versionada en el repositorio. `pptx-automizer` clona la diapositiva
-`Elemento` de la plantilla por cada elemento y le agrega, no le modifica, el título, una línea de
-metadatos, los tres textos, el collage fotográfico y una tabla con el resultado de cada punto de
-revisión — los placeholders de la plantilla están vacíos, así que no hay nada que "reemplazar" en
-ellos; todo se agrega encima, en las mismas coordenadas, con `pptxgenjs`. El collage lo arma `sharp`,
-con el mismo criterio de acomodo que ya probó `reporte.py` (Marzo, Drive). Verificado contra el ciclo
-real de agosto (224 elementos activos, 141 registros y 445 fotografías ya capturadas en ese momento):
-la primera versión tardaba más de diez minutos; corregido a menos de dos, la mayor parte descarga de
-fotografías y composición de collages —trabajo real, proporcional a la evidencia ya levantada, no una
-falla— después de que armar el `.pptx` por sistema y combinar al final en vez de ir acumulando las
-221 diapositivas en una sola presentación bajó el resto de varios minutos a segundos. El detalle
-completo, con los tres hallazgos por separado, está en D-17. Pendiente: medir el ciclo completo con
-los 221 elementos capturados y abrir el resultado en PowerPoint para confirmar que la plantilla y las
-fuentes institucionales se ven como se espera.
+la fase, sino lo que se pidió al retomarla. El documento reproduce el entregable que el área ya
+producía: las diapositivas base de la plantilla (intro, portada y agenda) y, por cada sistema, su
+divisor de capítulo seguido de **una diapositiva por elemento activo**, esté completo o no. Sobre
+`Plantilla_Informe.pptx` — `Reporte sistemas.pptx` más una diapositiva que sirve de molde, generada
+con `scripts/preparar_plantilla_informe.py` y subida al depósito, no versionada en el repositorio.
+
+Cada diapositiva lleva el collage a la derecha y, en la columna izquierda, tres bloques en
+posiciones **fijas** —para que todas se vean iguales aunque su contenido varíe— cada uno con su
+subtítulo en el estilo de la plantilla: **Tabla de características** (los puntos de revisión, justo
+debajo del título del elemento), **Observaciones** (los tres textos de campo, que se encogen si son
+largos en vez de desbordarse) y **Datos del sistema**, anclado a la parte inferior sin salirse del
+margen. Ese último bloque siempre trae los mismos siete renglones —sistema, zona, tipo, ubicación,
+referencia, responsable y estado, con una raya donde falte el dato— que es lo que permite anclarlo
+abajo con altura conocida. La respuesta de cada punto se pinta como color de texto, igual que el
+documento RAG, para que el mismo dato se vea igual en los dos entregables. Todo el texto va claro:
+el layout hereda fondo Deep Space Blue del master.
+
+La diapositiva molde de la plantilla se genera **sin placeholders**: al crear una diapositiva desde
+un layout, python-pptx copia sus placeholders con el texto de ejemplo dentro ("Título en Deep Space
+Blue", "Click para editar el texto"), que no es una guía sino contenido real y salía impreso debajo
+de lo que dibuja el generador.
+
+El grupo y el KSU que firman el informe (`GRUPO`, `KSU` en `lib/informe/geometria.ts`) no salen de la
+base: son del área que entrega, y la plantilla corporativa los trae sin llenar (`KSU XXX`). Se
+resuelven al generar, junto con la fecha y el ciclo de la portada y de los pies.
+
+Verificado contra el ciclo real de agosto (223 elementos activos, 445 fotografías): **231
+diapositivas** —3 base + 5 divisores + 223 elementos—, 79 s de generación, sin ningún texto en el
+color del fondo, sin bloques encimados —el último termina justo en el margen— y con los divisores
+cayendo exactamente donde termina cada capítulo. Este generador
+se había dado por bueno antes sin abrirlo nunca en PowerPoint, y escondía un defecto que ninguna
+comprobación automática podía ver —todo el texto se escribía del mismo color que el fondo, así que
+salía invisible—; el detalle completo de ése y de los demás está en la revisión de D-17. **Pendiente:
+abrir el archivo en PowerPoint** y confirmar el resultado visual con las fuentes institucionales
+instaladas — es el paso que faltó la primera vez.
 
 **Catálogos compartidos y columnas del RAG** (fuera de la numeración de fases, terminada). Se
 detectó que `elementos.zona` y `elementos.seccion` eran el mismo dato tecleado dos veces, y que

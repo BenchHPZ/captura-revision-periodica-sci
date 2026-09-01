@@ -1,10 +1,17 @@
 #!/usr/bin/env -S npx tsx
 /**
- * Sube la plantilla corporativa (Reporte sistemas - MASTER.pptx) al
- * depósito de Storage, bajo `_plantillas/`, de donde el informe fotográfico
- * la descarga en cada corrida (ver docs/decisiones.md D-17). Se corre una
- * sola vez, o cuando cambie el archivo de la plantilla — no depende de
- * ningún ciclo, mismo criterio que cargar-formatos.ts con 'formatos'.
+ * Sube la plantilla del informe (Plantilla_Informe.pptx) al depósito de
+ * Storage, bajo `_plantillas/`, de donde el informe fotográfico la
+ * descarga en cada corrida (ver docs/decisiones.md D-17). Se corre una
+ * sola vez, o cuando cambie el archivo — no depende de ningún ciclo,
+ * mismo criterio que cargar-formatos.ts con 'formatos'.
+ *
+ * OJO: la plantilla que va aquí NO es la corporativa tal cual, sino la que
+ * produce scripts/preparar_plantilla_informe.py — 'Reporte sistemas.pptx'
+ * más una diapositiva de 'Elemento' que sirve de molde. La corporativa no
+ * trae ninguna, y pptx-automizer sólo sabe clonar diapositivas que ya
+ * existen. Correr primero:
+ *   python scripts/preparar_plantilla_informe.py --origen "<...>" --destino "<...>"
  *
  * Usa la llave de servicio (SUPABASE_SERVICE_ROLE_KEY), así que se ejecuta
  * sólo desde el equipo local, nunca dentro de la aplicación desplegada.
@@ -26,7 +33,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // web/scripts -> web -> raíz del repo
 const RAIZ = path.resolve(__dirname, "..", "..");
 const DEPOSITO = "evidencias";
-const RUTA_DESTINO = "_plantillas/Reporte sistemas - MASTER.pptx";
+const RUTA_DESTINO = "_plantillas/Plantilla_Informe.pptx";
 
 function cargarEnv(ruta: string): Record<string, string> {
   if (!existsSync(ruta)) return {};
@@ -57,7 +64,8 @@ async function main(): Promise<number> {
   const rutaArgumento = leerArgumento(args, "--archivo");
 
   if (!rutaArgumento) {
-    console.error('Falta --archivo "<ruta a Reporte sistemas - MASTER.pptx>".');
+    console.error('Falta --archivo "<ruta a Plantilla_Informe.pptx>".');
+    console.error("Se genera con: python scripts/preparar_plantilla_informe.py --origen <corporativa> --destino <esta>");
     return 1;
   }
   const rutaArchivo = path.resolve(rutaArgumento);
