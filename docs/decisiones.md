@@ -653,6 +653,73 @@ conteo de diapositivas, `tsc` y el build no detectan un texto invisible, un pie 
 portada repetida ni dos bloques encimados — los cuatro defectos aparecieron mirando el resultado, no
 compilando.
 
+**Tercera pasada: informes parciales, y un divisor calculado por posición que dejó de serlo.**
+`generarInformePptx` ahora acepta una lista opcional de claves de sistema
+(`sistemasClaves`) para generar sólo el capítulo de uno o varios sistemas en vez del ciclo completo —
+el botón de `/informe` deja elegir cuáles con una casilla por sistema, todas marcadas por defecto. La
+intro, la portada y la agenda se agregan igual; lo que cambia es qué divisores y qué diapositivas de
+elemento entran.
+
+Escribir esto expuso un defecto que la sección anterior había dejado agazapado: qué divisor le tocaba
+a cada sistema se calculaba por su **posición** en `sistemas.orden` (`PRIMER_DIVISOR + índice`), bajo
+el supuesto de que siempre serían los mismos cinco sistemas en el mismo orden en que se redactaron los
+divisores de la plantilla. Verificando el informe completo contra la base real apareció un sexto
+sistema, `central_avisos`, dado de alta desde Configuración con `orden=0` — uso real de la pantalla que
+se construyó para eso, no un caso de prueba armado a propósito. Con seis sistemas, la posición 0 ya no
+era "Botones avisadores" sino "Central de avisos", y el cálculo por índice le habría puesto el divisor
+de otro capítulo. `geo.DIVISOR_POR_SISTEMA` reemplaza el índice por un mapa explícito de **clave de
+sistema → número de diapositiva**, así que un sistema nuevo simplemente no tiene entrada ahí y entra
+sin capítulo propio —tal como ya se pretendía, sólo que mal calculado— en vez de correr el índice de
+todos los que le siguen.
+
+**Lo que hay que sostener, de nuevo.** El primer intento de esta corrección ya había sido probado
+—`tsc`, `eslint`, y una corrida completa contra el ciclo real— y pasó todo limpio con el defecto
+adentro: nada de eso mira si el título de un divisor corresponde al capítulo que en verdad sigue. Sólo
+inspeccionar el XML del `.pptx` generado, diapositiva por diapositiva, lo mostró.
+
+**Cuarta pasada: de cinco sistemas fijos a de 2 a 10, sin editar la plantilla cada mes.**
+`DIVISOR_POR_SISTEMA` resolvía el defecto anterior, pero seguía dejando **sin capítulo propio** a
+cualquier sistema fuera de los cinco originales — aceptable cuando `central_avisos` era la única
+excepción, pero no cuando la planta trabaja con entre 2 y 10 sistemas según el mes, cada uno con
+derecho a su propio divisor y a aparecer en la agenda.
+
+- **El divisor pasó de cinco copias a un solo molde.** Las cinco diapositivas de divisor
+  (`Reporte sistemas.pptx`, posiciones 4 a 8) resultaron ser estructuralmente idénticas — mismos
+  nombres de forma, misma posición; sólo cambian el número grande y el título. `DIVISOR_POR_SISTEMA`
+  desapareció: ahora se clona una sola vez la de la posición 4 (`geo.SLIDE_MOLDE_DIVISOR`) por cada
+  sistema que sí tenga elementos, numerada en el orden en que aparece, con
+  `` `${sistema.nombre} – ${sistema.rag}` `` como título (sin el sufijo si el sistema no tiene `rag`).
+  Las otras cuatro copias no se referencian nunca y `removeExistingSlides` las descarta solas — el
+  mismo mecanismo que ya limpiaba las diapositivas de un divisor no usado en el informe parcial.
+- **La agenda sí necesitó tocar la plantilla.** Es una rejilla fija de 5 casillas (número + nombre),
+  con el nombre de los cinco sistemas escrito a mano — el generador nunca la tocaba. Diez sistemas no
+  caben en cinco casillas, y redibujarla con `pptxgenjs` en vez de reutilizar la forma real arriesgaba
+  no replicar el círculo, el color y la tipografía exactos de la plantilla corporativa. En vez de eso,
+  `scripts/preparar_plantilla_informe.py` ahora también **amplía la rejilla a 10 casillas duplicando
+  el XML de las 5 originales tal cual** (mismo mecanismo que ya usaba para el molde de `Elemento`:
+  extender la plantilla generada, nunca la corporativa), y les da nombre único
+  (`"Agenda Numero N"` / `"Agenda Nombre N"`) — las 5 originales de la plantilla repetían el mismo
+  nombre en las cinco, así que no había manera de direccionarlas una por una.
+- **Encontrado al probar, no al escribir el código:** vaciar el texto de las casillas nuevas en el
+  script de preparación (`shape.text_frame.text = ""`) parecía la limpieza obvia — pero python-pptx
+  vacía un párrafo quitándole también su `<a:r>` (la corrida de texto), y sin una corrida existente
+  `modifyElement` de pptx-automizer no tiene qué reemplazar: es el mismo problema de los placeholders
+  vacíos de la primera pasada de esta decisión, sólo que en las casillas de la agenda en vez de en
+  `Elemento`. `tsc`, `eslint` y la generación completa contra la base real no lo detectaron — el
+  archivo se generaba sin error, con las diez casillas en blanco. Sólo inspeccionar el XML del
+  `.pptx` resultante lo mostró. La corrección fue dejar el texto de ejemplo de la plantilla corporativa
+  tal cual en las casillas nuevas: el generador llena las diez en cada corrida —usadas o no—, así que
+  ese texto nunca sobrevive a un informe real.
+- **Techo, no diseño abierto.** `geo.AGENDA_MAX_SISTEMAS = 10` es literal, no un valor de
+  configuración: son las casillas físicas que trae la plantilla. Un informe con más sistemas
+  seleccionados que ese techo falla con un mensaje claro en vez de generar una agenda incompleta —
+  volver a ampliar la rejilla exigiría repetir el mismo procedimiento de duplicar XML con más filas o
+  columnas.
+
+Verificado con la base real (seis sistemas activos, incluido `central_avisos`, con `rag = "RAG 2.19"`)
+y con un informe parcial de dos sistemas: agenda y divisores coinciden en número y título, las
+casillas sin usar quedan vacías, y ningún divisor le pisa el capítulo a otro.
+
 ---
 
 ## D-18 · Catálogo único de zonas y diccionario de tipos por sistema

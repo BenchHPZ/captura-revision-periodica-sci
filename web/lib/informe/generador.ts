@@ -38,12 +38,47 @@ import * as geo from "./geometria";
  * diapositiva, no su posición en el mazo, así que al pedir las
  * diapositivas 1..N de un archivo de parte se recogían las de la plantilla
  * que `removeExistingSlides` había dejado huérfanas. Ver D-17.
+ *
+ * `sistemasClaves`, si se da, limita el informe a esos sistemas — para
+ * cuando sólo hace falta reimprimir el capítulo de uno en concreto, en vez
+ * del ciclo completo. La intro y la portada se agregan igual (diapositivas
+ * fijas de la plantilla); la agenda y los divisores de capítulo, en
+ * cambio, se arman en cada corrida a partir de los sistemas seleccionados
+ * — de 2 a `geo.AGENDA_MAX_SISTEMAS` —, no de un contenido fijo pensado
+ * para cinco. El divisor usa un solo molde (`geo.SLIDE_MOLDE_DIVISOR`)
+ * clonado una vez por sistema con elementos, numerado en el orden en que
+ * aparecen; la agenda llena las `geo.AGENDA_MAX_SISTEMAS` casillas que
+ * `scripts/preparar_plantilla_informe.py` amplió a partir de las 5
+ * originales, y deja vacías las que sobren.
  */
-export async function generarInformePptx(supabase: SupabaseClient, ciclo: Ciclo): Promise<Buffer> {
+export interface InformePptx {
+  archivo: Buffer;
+  /** Ya incluye el sufijo de sistemas cuando el informe es parcial, para
+   * que el nombre de descarga no mienta diciendo "el ciclo completo". */
+  nombreArchivo: string;
+}
+
+export async function generarInformePptx(
+  supabase: SupabaseClient,
+  ciclo: Ciclo,
+  sistemasClaves?: string[],
+): Promise<InformePptx> {
   const carpetaTemp = await mkdtemp(path.join(tmpdir(), "informe-"));
   await descargarPlantilla(supabase, carpetaTemp);
 
-  const sistemas = await obtenerSistemas(supabase);
+  const todosLosSistemas = await obtenerSistemas(supabase);
+  const sistemas = sistemasClaves
+    ? todosLosSistemas.filter((s) => sistemasClaves.includes(s.clave))
+    : todosLosSistemas;
+  if (sistemas.length === 0) {
+    throw new Error("No hay ningún sistema seleccionado para el informe.");
+  }
+  if (sistemas.length > geo.AGENDA_MAX_SISTEMAS) {
+    throw new Error(
+      `Un informe admite hasta ${geo.AGENDA_MAX_SISTEMAS} sistemas; hay ${sistemas.length} seleccionados.`,
+    );
+  }
+
   const pres = nuevoAutomizer(carpetaTemp)
     .loadRoot(geo.NOMBRE_PLANTILLA_ARCHIVO)
     .load(geo.NOMBRE_PLANTILLA_ARCHIVO, "plantilla");
@@ -64,11 +99,21 @@ export async function generarInformePptx(supabase: SupabaseClient, ciclo: Ciclo)
   pres.addSlide("plantilla", geo.SLIDE_AGENDA, (slide) => {
     slide.modifyElement(geo.FECHA_AGENDA, ModifyTextHelper.setText(fecha));
     slide.modifyElement(geo.PIE_AGENDA, ModifyTextHelper.setText(geo.PIE_TEXTO));
+    // Lista los sistemas SELECCIONADOS para esta corrida, no sólo los que
+    // terminan con elementos — mismo criterio que el filtro parcial. Las
+    // casillas sobrantes (hasta AGENDA_MAX_SISTEMAS) quedan vacías.
+    for (let i = 1; i <= geo.AGENDA_MAX_SISTEMAS; i += 1) {
+      const sistema = sistemas[i - 1];
+      slide.modifyElement(geo.agendaNumero(i), ModifyTextHelper.setText(sistema ? String(i) : ""));
+      slide.modifyElement(geo.agendaNombre(i), ModifyTextHelper.setText(sistema ? sistema.nombre : ""));
+    }
   });
 
   let totalElementos = 0;
-  for (const [indice, sistema] of sistemas.entries()) {
-    const agregadas = await agregarSistema(supabase, ciclo, sistema, pres, indice, fecha);
+  let numeroCapitulo = 1;
+  for (const sistema of sistemas) {
+    const agregadas = await agregarSistema(supabase, ciclo, sistema, pres, fecha, numeroCapitulo);
+    if (agregadas > 0) numeroCapitulo += 1;
     totalElementos += agregadas;
   }
 
@@ -76,9 +121,12 @@ export async function generarInformePptx(supabase: SupabaseClient, ciclo: Ciclo)
     throw new Error("Ningún sistema tiene elementos activos — no hay nada que incluir en el informe.");
   }
 
-  const nombreSalida = `Informe_Reporte_${ciclo.nombre.replace(/\s+/g, "")}.pptx`;
-  await pres.write(nombreSalida);
-  return readFile(path.join(carpetaTemp, nombreSalida));
+  const esParcial = sistemasClaves !== undefined && sistemas.length < todosLosSistemas.length;
+  const sufijo = esParcial ? `_${sistemas.map((s) => s.clave).join("-")}` : "";
+  const nombreArchivo = `Informe_Reporte_${ciclo.nombre.replace(/\s+/g, "")}${sufijo}.pptx`;
+  await pres.write(nombreArchivo);
+  const archivo = await readFile(path.join(carpetaTemp, nombreArchivo));
+  return { archivo, nombreArchivo };
 }
 
 async function descargarPlantilla(supabase: SupabaseClient, carpetaTemp: string): Promise<void> {
@@ -104,8 +152,8 @@ async function agregarSistema(
   ciclo: Ciclo,
   sistema: Sistema,
   pres: ReturnType<Automizer["loadRoot"]>,
-  indiceSistema: number,
   fecha: string,
+  numeroCapitulo: number,
 ): Promise<number> {
   const [elementos, plantilla] = await Promise.all([
     obtenerElementosParaInforme(supabase, ciclo.id, sistema.id),
@@ -131,16 +179,15 @@ async function agregarSistema(
 
   if (elementos.length === 0) return 0;
 
-  // Los cinco divisores de la plantilla están en el mismo orden que
-  // `sistemas.orden`. Un sistema dado de alta después no tiene divisor
-  // propio: sus elementos entran sin capítulo, en vez de tomar prestado
-  // el de otro sistema.
-  if (indiceSistema < geo.TOTAL_DIVISORES) {
-    pres.addSlide("plantilla", geo.PRIMER_DIVISOR + indiceSistema, (slide) => {
-      slide.modifyElement(geo.FECHA_DIVISOR, ModifyTextHelper.setText(fecha));
-      slide.modifyElement(geo.PIE_DIVISOR, ModifyTextHelper.setText(geo.PIE_TEXTO));
-    });
-  }
+  pres.addSlide("plantilla", geo.SLIDE_MOLDE_DIVISOR, (slide) => {
+    slide.modifyElement(geo.DIVISOR_NUMERO, ModifyTextHelper.setText(String(numeroCapitulo)));
+    slide.modifyElement(
+      geo.DIVISOR_TITULO,
+      ModifyTextHelper.setText(sistema.rag ? `${sistema.nombre} – ${sistema.rag}` : sistema.nombre),
+    );
+    slide.modifyElement(geo.FECHA_DIVISOR, ModifyTextHelper.setText(fecha));
+    slide.modifyElement(geo.PIE_DIVISOR, ModifyTextHelper.setText(geo.PIE_TEXTO));
+  });
 
   let total = 0;
   for (const [, elementosZona] of agruparPorZona(paraAgrupar)) {

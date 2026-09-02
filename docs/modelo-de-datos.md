@@ -54,7 +54,15 @@ Un renglón por mes de revisión.
 
 ### 2.2 `sistemas`
 
-Catálogo fijo de los cinco sistemas contra incendio que cubre la revisión mensual.
+Catálogo de los sistemas contra incendio que puede cubrir la revisión mensual — **no un conjunto
+fijo de cinco**. Cada ciclo trae en `config.sistemas_activos` (§3.1) el subconjunto que le toca, y en
+la práctica varía entre 2 y 10 según el mes; los cinco de la tabla de abajo son los valores con los
+que arrancó el catálogo, no un techo. Un sistema nuevo se da de alta desde
+**Configuración → Sistemas**, sin migración — el resto de la aplicación (captura, tablero, documento
+RAG, e informe fotográfico) recorre lo que haya en esta tabla, no una lista cableada. El informe
+fotográfico admite hasta 10 sistemas por corrida (`geo.AGENDA_MAX_SISTEMAS` en
+`web/lib/informe/geometria.ts`) — el techo físico de casillas que trae su plantilla, no un límite de
+esta tabla; ver docs/decisiones.md D-17.
 
 | Campo | Tipo | Nulo | Descripción |
 |---|---|---|---|
@@ -356,9 +364,14 @@ final del documento completo; siendo global hoy siempre es `true`, pero queda co
 constante suelta— para que un formato de otra periodicidad lo pueda resolver distinto más adelante sin
 tocar los mensuales.
 
-### 3.5 Formato de intercambio del catálogo
+### 3.5 Formatos de intercambio de Configuración → Importar y exportar
 
-Lo que se importa y exporta desde la pantalla de catálogo:
+Cuatro formatos JSON distintos conviven en ese panel (`web/app/(app)/configuracion/PanelImportarExportar.tsx`),
+con dos niveles de madurez: catálogo y formatos RAG tienen ida y vuelta completa (importar concilia,
+no sólo sobrescribe); zonas y sistemas sólo tienen botón de exportar — la copia sirve de respaldo o
+para editar en pantalla, no hay importador que los concilie todavía.
+
+#### 3.5.1 Catálogo (elementos)
 
 ```jsonc
 {
@@ -391,6 +404,70 @@ de alta, y lo que ya no aparece en el archivo se marca `activo = false` en lugar
 > de importar/exportar (`/configuracion → Importar y exportar`) se quedó en la forma vieja, a
 > propósito: rediseñar el formato de intercambio quedó fuera de la reorganización de pantallas. Ver
 > docs/decisiones.md D-18 y D-21.
+
+#### 3.5.2 Plantillas (puntos de revisión por sistema)
+
+Sólo **exportación** — botón "Exportar plantillas" del mismo panel. No existe importador: cambiar
+puntos de revisión se hace desde `/sistemas/[clave]` (Flujo 6), donde el sistema advierte cuántos
+elementos cambian de estado antes de confirmar; un importador que sobrescribiera `plantillas` sin ese
+aviso podría regresar elementos ya capturados a `parcial` sin que nadie se dé cuenta.
+
+```jsonc
+{
+  "ciclo": "2026-08",
+  "plantillas": [
+    { "sistema": "hidrantes_interiores", "fotos": [ /* §3.2 */ ], "puntos": [ /* §3.2 */ ], "texto_libre": ["como_se_encontro", "que_se_realizo", "pendientes"] }
+  ]
+}
+```
+
+Un renglón por sistema que tenga plantilla capturada en el ciclo — los que aún no la tienen no
+aparecen.
+
+#### 3.5.3 Formatos RAG (identidad del documento)
+
+Importación **y** exportación, aunque el panel sólo trae botón de importar — no hay "Exportar
+formatos" en pantalla todavía. Alimenta la tabla `formatos` (§2.8), no `plantillas`: aquí sólo va lo
+que es fijo por documento (clave, referencia, instrucciones propias), nunca los puntos de revisión del
+mes.
+
+```jsonc
+{
+  "formatos": [
+    {
+      "clave": "RAG 2.3",
+      "nombre": "Formato de revisión de hidrantes interiores",
+      "periodicidad": "mensual",
+      "sistema": "hidrantes_interiores",
+      "documento_referencia": "I1.15M2_4037-002",
+      "revision": "5",
+      "instrucciones": ["Tipo de hidrante: P = Pie, G = Gabinete."],
+      "notas": null
+    }
+  ]
+}
+```
+
+La conciliación es por `clave` (`upsert`, `onConflict: "clave"`): lo que existe se actualiza, lo que
+no existe se da de alta. Un `sistema` que no exista en la tabla `sistemas` no rechaza el renglón —lo
+carga con `sistema_id = null` y lo señala como advertencia—, porque `formatos.sistema_id` admite nulo
+para documentos que no recorren un catálogo de elementos (§2.8).
+
+#### 3.5.4 Zonas y sistemas
+
+Sólo exportación — copia de respaldo de las dos tablas de catálogo compartido, tal como las devuelve
+`obtenerZonas()`/`obtenerSistemasCatalogo()` (renglón completo, sin transformar):
+
+```jsonc
+// zonas.json
+[{ "id": "...", "clave": "calle-1-seccionamiento", "nombre": "Calle 1 · Seccionamiento", "descripcion": null, "orden": 1, "activo": true }]
+
+// sistemas.json
+[{ "id": "...", "clave": "hidrantes_interiores", "nombre": "Hidrantes interiores", "rag": "RAG 2.3", "orden": 2, "activo": true, "tipos": [] }]
+```
+
+Ambas se editan desde la pantalla (**Configuración → Zonas** y **→ Sistemas**), altas incluidas — este
+JSON es sólo para tener una copia fuera de la base, no un formato de importación.
 
 ### 3.6 El orden de recorrido
 

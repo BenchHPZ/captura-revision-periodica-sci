@@ -17,14 +17,17 @@ export interface InformeGenerado {
  * de descarga en vez de mandar el archivo en la respuesta — un .pptx con
  * fotos de 221 elementos puede pesar varios cientos de MB, muy por encima
  * de lo razonable para el cuerpo de una función serverless.
+ *
+ * `sistemasClaves`, si se da, limita el informe a esos sistemas — para
+ * reimprimir el capítulo de uno en concreto sin regenerar el ciclo
+ * completo. Omitido o con los cinco sistemas, genera el informe completo.
  */
-export async function generarInforme(): Promise<InformeGenerado> {
+export async function generarInforme(sistemasClaves?: string[]): Promise<InformeGenerado> {
   const supabase = await createClient();
   const ciclo = await obtenerCicloAbierto(supabase);
   if (!ciclo) throw new Error("No hay ningún ciclo abierto.");
 
-  const archivo = await generarInformePptx(supabase, ciclo);
-  const nombreArchivo = `Informe_Reporte_${ciclo.nombre.replace(/\s+/g, "")}.pptx`;
+  const { archivo, nombreArchivo } = await generarInformePptx(supabase, ciclo, sistemasClaves);
   const ruta = `${ciclo.clave}/_informe/${nombreArchivo}`;
 
   const { error: errorSubida } = await supabase.storage.from(DEPOSITO).upload(ruta, archivo, {

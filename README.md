@@ -331,15 +331,33 @@ El grupo y el KSU que firman el informe (`GRUPO`, `KSU` en `lib/informe/geometri
 base: son del área que entrega, y la plantilla corporativa los trae sin llenar (`KSU XXX`). Se
 resuelven al generar, junto con la fecha y el ciclo de la portada y de los pies.
 
-Verificado contra el ciclo real de agosto (223 elementos activos, 445 fotografías): **231
-diapositivas** —3 base + 5 divisores + 223 elementos—, 79 s de generación, sin ningún texto en el
-color del fondo, sin bloques encimados —el último termina justo en el margen— y con los divisores
-cayendo exactamente donde termina cada capítulo. Este generador
-se había dado por bueno antes sin abrirlo nunca en PowerPoint, y escondía un defecto que ninguna
-comprobación automática podía ver —todo el texto se escribía del mismo color que el fondo, así que
-salía invisible—; el detalle completo de ése y de los demás está en la revisión de D-17. **Pendiente:
-abrir el archivo en PowerPoint** y confirmar el resultado visual con las fuentes institucionales
-instaladas — es el paso que faltó la primera vez.
+Desde `/informe` se puede generar el ciclo completo o sólo el capítulo de uno o varios sistemas —una
+casilla por sistema, todas marcadas por defecto—, para cuando sólo hace falta reimprimir uno sin
+regenerar los demás. `generarInformePptx(supabase, ciclo, sistemasClaves?)` filtra qué sistemas
+entran; el nombre del archivo lleva un sufijo con las claves cuando es parcial, para que no se
+confunda con el ciclo completo.
+
+**La agenda y los divisores de capítulo se arman en cada corrida, para de 2 a
+`geo.AGENDA_MAX_SISTEMAS` (10) sistemas — no para cinco fijos.** El divisor usa un solo molde
+(`geo.SLIDE_MOLDE_DIVISOR`, clonado una vez por sistema con elementos, numerado en el orden en que
+aparece); la agenda llena las 10 casillas número+nombre que
+`scripts/preparar_plantilla_informe.py` amplió a partir de las 5 originales de la plantilla
+corporativa —duplicando su XML tal cual, no redibujándolas, para que el círculo, el color y la
+tipografía salgan idénticos— y deja vacías las que sobren. Un informe con más de 10 sistemas
+seleccionados falla con un mensaje claro en vez de generar una agenda incompleta. Ver la revisión
+"Cuarta pasada" de D-17.
+
+Verificado contra el ciclo real de agosto (seis sistemas activos, incluido `central_avisos` con
+`rag = "RAG 2.19"`, 445 fotografías): el informe completo sale con la portada, la agenda (6 nombres,
+4 casillas vacías) y los seis divisores en su título correcto y su número secuencial; un informe
+parcial de dos sistemas sale con sólo sus dos divisores y sus elementos, agenda y numeración
+coherentes con la selección. Todo el texto va claro sobre el fondo, sin bloques encimados —el último
+termina justo en el margen. Este generador se había dado por bueno antes sin abrirlo nunca en
+PowerPoint, y escondía defectos que ninguna comprobación automática podía ver —un texto invisible, un
+divisor mal etiquetado, y luego una agenda que se generaba "sin error" con las diez casillas en
+blanco por una corrida de texto vaciada de más—; el detalle completo está en la revisión de D-17.
+**Pendiente: abrir el archivo en PowerPoint** y confirmar el resultado visual con las fuentes
+institucionales instaladas — es el paso que faltó la primera vez.
 
 **Catálogos compartidos y columnas del RAG** (fuera de la numeración de fases, terminada). Se
 detectó que `elementos.zona` y `elementos.seccion` eran el mismo dato tecleado dos veces, y que

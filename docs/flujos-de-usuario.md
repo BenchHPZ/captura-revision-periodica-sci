@@ -185,10 +185,13 @@ el estado, pero permanecen almacenados porque son información levantada en camp
 1. El encargado verifica en el tablero que no queden elementos `parcial` ni fotografías sin
    clasificar.
 2. Exporta los resultados a JSON y el detalle a CSV.
-3. Entra a **Informe** y pulsa *Generar informe*. La aplicación arma la presentación mensual sobre la
-   plantilla corporativa: intro, portada y agenda, y luego, por cada sistema, su divisor de capítulo
-   seguido de una diapositiva por elemento —esté completo o parcial— con su collage fotográfico, sus
-   tres descripciones, sus datos y sus puntos de revisión. Al terminar ofrece un enlace de descarga.
+3. Entra a **Informe**. Por defecto salen marcados todos los sistemas activos del ciclo (de 2 a 10) —
+   desmarca los que no hagan falta si sólo necesitas reimprimir el capítulo de uno en concreto, sin
+   regenerar el ciclo completo. Pulsa *Generar informe*. La aplicación arma la presentación mensual
+   sobre la plantilla corporativa: intro y portada fijas, y una agenda y unos divisores de capítulo que
+   se arman en el momento según qué sistemas estén marcados —no una lista fija de cinco—, seguidos de
+   una diapositiva por elemento —esté completo o parcial— con su collage fotográfico, sus
+   observaciones, sus datos y sus puntos de revisión. Al terminar ofrece un enlace de descarga.
 4. Descarga el archivo, lo revisa abriéndolo en PowerPoint y lo deposita a mano en la carpeta de
    trabajo junto con los formatos RAG llenados.
 5. Entrega a coordinación de turno para supervisión y firma.

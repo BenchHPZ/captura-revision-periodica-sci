@@ -16,15 +16,35 @@
 export const NOMBRE_PLANTILLA_ARCHIVO = "Plantilla_Informe.pptx";
 
 /** Diapositivas de la plantilla, 1-indexadas como las numera
- * pptx-automizer. Los cinco divisores (4 a 8) ya vienen redactados con su
- * '– RAG 2.x' y en el mismo orden que `sistemas.orden`. */
+ * pptx-automizer. */
 export const SLIDE_INTRO = 1;
 export const SLIDE_PORTADA = 2;
 export const SLIDE_AGENDA = 3;
-export const PRIMER_DIVISOR = 4;
-export const TOTAL_DIVISORES = 5;
 /** El molde que se clona una vez por elemento. */
 export const SLIDE_MOLDE_ELEMENTO = 9;
+
+/** El divisor de capítulo (4) es un molde ÚNICO, no uno por sistema: las
+ * cinco copias que trae la plantilla corporativa (4 a 8) son idénticas
+ * salvo el número y el título, así que se reutiliza la primera para
+ * cualquier cantidad de sistemas — de 2 a `AGENDA_MAX_SISTEMAS` — en vez
+ * de un mapa fijo por clave. Las otras cuatro copias (5 a 8) nunca se
+ * referencian y `removeExistingSlides` las descarta solas. */
+export const SLIDE_MOLDE_DIVISOR = 4;
+/** El número grande de capítulo y el título, dentro del molde. */
+export const DIVISOR_NUMERO = "Text Placeholder 1";
+export const DIVISOR_TITULO = "Text Placeholder 3";
+
+/** Techo de sistemas por informe: la rejilla de la Agenda trae exactamente
+ * estas casillas (5 filas × 2 columnas), ampliadas por
+ * scripts/preparar_plantilla_informe.py a partir de las 5 originales. Un
+ * informe con más sistemas que esto no tiene dónde listarlos. */
+export const AGENDA_MAX_SISTEMAS = 10;
+/** Nombre de forma de la casilla `i` (1..AGENDA_MAX_SISTEMAS) de la
+ * Agenda — asignado por preparar_plantilla_informe.py, no el nombre
+ * original de la plantilla corporativa (que repetía el mismo nombre en
+ * las 5 casillas y no permitía direccionarlas una a una). */
+export const agendaNumero = (i: number): string => `Agenda Numero ${i}`;
+export const agendaNombre = (i: number): string => `Agenda Nombre ${i}`;
 
 // ------------------------------------------- datos del grupo que firma
 //

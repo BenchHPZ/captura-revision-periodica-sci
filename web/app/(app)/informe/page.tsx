@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { obtenerCicloAbierto } from "@/lib/datos";
+import { obtenerCicloAbierto, obtenerSistemas } from "@/lib/datos";
 import { SinCiclo } from "@/components/SinCiclo";
 import { Informe } from "./Informe";
 
@@ -17,5 +17,10 @@ export default async function InformePage() {
     return <SinCiclo>No hay ningún ciclo abierto todavía.</SinCiclo>;
   }
 
-  return <Informe ciclo={{ nombre: ciclo.nombre }} />;
+  // Los mismos sistemas activos que el generador recorre — así la lista
+  // de la pantalla nunca puede mostrar un sistema que el informe no sabe
+  // generar, ni al revés.
+  const sistemas = await obtenerSistemas(supabase);
+
+  return <Informe ciclo={{ nombre: ciclo.nombre }} sistemas={sistemas.map((s) => ({ clave: s.clave, nombre: s.nombre }))} />;
 }
