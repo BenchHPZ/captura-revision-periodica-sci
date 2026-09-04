@@ -18,6 +18,8 @@ erDiagram
     elementos ||--o| registros : "lo capturado"
     registros ||--o{ fotos : "sus fotografías"
     entrada |o--o| fotos : "al asignar (Flujo 3)"
+    formatos ||--o{ checklist_bloques : "sólo tipo_documento='checklist'"
+    checklist_bloques ||--o{ checklist_items : "sus renglones"
 ```
 
 Tres conjuntos con ciclos de vida distintos:
@@ -27,10 +29,13 @@ Tres conjuntos con ciclos de vida distintos:
 | **Configuración** | `ciclos`, `sistemas`, `formatos` | Encargado de sistemas | Al abrir el ciclo; `formatos` sólo cuando cambia el documento oficial, no cada mes |
 | **Catálogo** | `elementos`, `plantillas` | Encargado de sistemas | Al abrir el ciclo y durante la ejecución |
 | **Resultados** | `registros`, `fotos`, `entrada` | Quien captura | Durante la ejecución |
+| **Checklist** | `checklist_bloques`, `checklist_items` | Encargado de sistemas | Al definir un tipo de checklist nuevo — no depende de ningún ciclo |
 
 Todo cuelga de `ciclos`. Un ciclo es un mes de revisión; cerrar uno y abrir el siguiente no toca los
 datos del anterior. `formatos` es la excepción: no cuelga de ningún ciclo — es la identidad y la
-imagen de un RAG, estable entre meses (ver §2.8).
+imagen de un RAG o de un checklist, estable entre meses (ver §2.8). `checklist_bloques`/
+`checklist_items` tampoco cuelgan de ningún ciclo, por la misma razón: son el contenido fijo de un
+tipo de documento, no algo que se capture mes a mes (ver §2.10, §2.11 y docs/decisiones.md D-22).
 
 ---
 
@@ -195,30 +200,39 @@ Lo capturado para un elemento. Un renglón por elemento y ciclo.
 
 ### 2.8 `formatos`
 
-La identidad de un RAG: lo que es **particular** de ese documento y no cambia entre ciclos. No cuelga
-de `ciclos` — se identifica por `(nombre, periodicidad)`, no por mes. Lo que sí cambia mes a mes —los
-puntos de revisión— sigue viviendo en `plantillas` (§2.3); esa separación es la que permite que un
-formato semanal o diario entre después sin tocar los cinco mensuales. Ver docs/decisiones.md D-15 y
-D-16.
+La identidad de un documento imprimible: lo que es **particular** de ese documento y no cambia entre
+ciclos. No cuelga de `ciclos` — se identifica por `(nombre, periodicidad)`, no por mes. Lo que sí
+cambia mes a mes —los puntos de revisión de un RAG— sigue viviendo en `plantillas` (§2.3); esa
+separación es la que permitió que un tipo de documento nuevo (el checklist, §2.10) entrara después sin
+tocar los cinco mensuales, tal como se previó. Ver docs/decisiones.md D-15, D-16 y D-22.
 
-Lo que debe ser **idéntico** en los cinco formatos mensuales —clasificación, razón social, domicilio,
-la instrucción general y el bloque de cierre— no está en esta tabla: vive como constantes en
-`web/lib/rag/constantes.ts`, precisamente para que no haya manera de que un formato lo traiga distinto
-a los demás (D-15 §7.1). `armarDocumentoRAG()` (`web/lib/rag/documento.ts`) es quien compone ambas
-fuentes en un solo `DocumentoRAG` al generar.
+`tipo_documento` decide qué motor arma el documento a partir de esta fila: `'rag'` recorre un catálogo
+de `elementos` con `web/lib/rag/` (columnas = puntos de una plantilla compartida, cierre único al
+final); `'checklist'` arma sus propios bloques/ítems con `web/lib/checklist/` (§2.10, §2.11), sin
+pasar por ningún catálogo ni por el flujo de captura fotográfica — se imprime en blanco para llenarse
+a mano. Un formato `'checklist'` siempre trae `sistema_id = null`.
+
+Lo que debe ser **idéntico** entre los dos motores —clasificación, razón social, domicilio, logo— vive
+como constantes en `web/lib/documentos/constantes.ts`; lo que es propio de cada motor (la instrucción
+general y el bloque de cierre de RAG; la instrucción general y el encabezado/cierre por columna del
+checklist) vive en `web/lib/rag/constantes.ts` y `web/lib/checklist/constantes.ts` respectivamente —
+así no hay manera de que un formato del mismo tipo lo traiga distinto a los demás (D-15 §7.1, D-22).
+`armarDocumentoRAG()`/`armarDocumentoChecklist()` son quienes componen esas fuentes con la fila de
+`formatos` al generar.
 
 | Campo | Tipo | Nulo | Descripción |
 |---|---|---|---|
 | `id` | uuid | no | Llave primaria |
-| `clave` | text | no | Identificador corto del documento oficial. Único. Ejemplo: `RAG 2.3` |
+| `clave` | text | no | Identificador corto del documento oficial. Único. Ejemplo: `RAG 2.3`, `RAG 4.1` |
 | `nombre` | text | no | Título completo del formato |
-| `periodicidad` | text | no | `mensual` hoy; el campo admite otros valores para inspecciones más frecuentes |
-| `sistema_id` | uuid | sí | Referencia a `sistemas`. Nulo para formatos que no recorren un catálogo de elementos (p. ej. por evento) |
-| `documento_referencia` | text | no | Ejemplo: `I1.15M2_4037-002`. Va al **pie** del documento, no al encabezado |
+| `periodicidad` | text | no | `mensual` para los cinco RAG; `diario` para un checklist de unidad |
+| `sistema_id` | uuid | sí | Referencia a `sistemas`. Nulo para formatos que no recorren un catálogo de elementos (por evento, o `tipo_documento='checklist'`) |
+| `tipo_documento` | text | no | `'rag'` (default) o `'checklist'` — qué motor de renderizado le corresponde. Ver docs/decisiones.md D-22 |
+| `documento_referencia` | text | no | Ejemplo: `I1.15M2_4037-002`, `I1.15M2_4037-004`. Va al **pie** del documento, no al encabezado |
 | `revision` | text | sí | Va al pie, junto con `documento_referencia` |
 | `instrucciones` | jsonb | no | Sólo las instrucciones **propias** de este formato (p. ej. "P = Pie, G = Gabinete" en RAG 2.2). La instrucción general no se repite aquí — se concatena al generar. Ver §3.4 |
 | `notas` | text | sí | Discrepancias del documento de origen frente al proceso real, señaladas sin resolver — mismo criterio que `elementos.notas` |
-| `columnas` | jsonb | no | `{ubicacion, referencia}` — qué columnas opcionales lleva este documento. Id, Numeración, Tipo (si el sistema lo tiene), los puntos y Observaciones no son opcionales. Ver docs/decisiones.md D-19 |
+| `columnas` | jsonb | no | `{ubicacion, referencia}` — qué columnas opcionales lleva un documento `'rag'`. Sin significado para `'checklist'`. Ver docs/decisiones.md D-19 |
 | `creado` | timestamptz | no | Alta del formato |
 | `actualizado` | timestamptz | no | Última modificación |
 
@@ -238,6 +252,47 @@ Sustituye a `elementos.zona`/`seccion`/`orden_seccion` (D-15) — ver docs/decis
 | `descripcion` | text | sí | Contexto adicional, sólo para pantalla — no se imprime |
 | `orden` | smallint | no | Orden de presentación entre zonas. Sustituye a `elementos.orden_seccion` |
 | `activo` | boolean | no | Permite retirar una zona sin borrarla |
+
+### 2.10 `checklist_bloques`
+
+Un bloque de un formato `tipo_documento='checklist'` — portada de fotos de identificación, tabla de
+equipo con verificaciones, sub-checklist de descripciones simples (mecánico), o bitácora de columnas
+libres sin fechas. Ver docs/decisiones.md D-22.
+
+| Campo | Tipo | Nulo | Descripción |
+|---|---|---|---|
+| `id` | uuid | no | Llave primaria |
+| `formato_id` | uuid | no | Referencia a `formatos`, `on delete cascade` |
+| `tipo` | text | no | `portada_fotos`, `tabla_verificacion`, `tabla_simple` o `bitacora_libre` — decide cómo se interpretan sus `checklist_items` (§2.11) y cómo se renderiza (`web/lib/checklist/render.ts`) |
+| `nombre` | text | no | Título del bloque, p. ej. `Equipo`, `Mecánico`, `Bitácora de insumos` |
+| `orden` | smallint | no | Orden de aparición dentro del documento |
+| `columnas` | jsonb | no | Sólo `bitacora_libre`: `[{id, etiqueta}]` de sus columnas fijas. Vacío en los demás tipos |
+| `filas_blanco` | smallint | sí | Sólo `bitacora_libre`: cuántas filas en blanco imprimir. Nulo en los demás tipos |
+| `creado` | timestamptz | no | Alta del bloque |
+| `actualizado` | timestamptz | no | Última modificación |
+
+### 2.11 `checklist_items`
+
+Un renglón de un `checklist_bloques` — un "Equipo" con su foto de referencia y una o más
+verificaciones, o una "Descripción" del sub-checklist mecánico.
+
+| Campo | Tipo | Nulo | Descripción |
+|---|---|---|---|
+| `id` | uuid | no | Llave primaria |
+| `bloque_id` | uuid | no | Referencia a `checklist_bloques`, `on delete cascade` |
+| `categoria` | text | sí | Agrupador visual dentro del bloque (p. ej. `EQUIPO MEDICO`), texto libre — **no** referencia a `zonas`: las categorías de un checklist son propias de ese checklist, no necesitan el catálogo compartido de planta (ver docs/decisiones.md D-22) |
+| `pos` | text | sí | Rótulo tal cual el documento de origen. Puede repetirse — el PDF de la ambulancia trae Pos duplicados reales (`63` se repite 6 veces); no es una clave, sólo se imprime |
+| `nombre` | text | no | "Equipo" (bloques de tabla) o "Descripción" (sub-checklist mecánico) |
+| `cantidad` | text | sí | Texto libre, p. ej. `6`, `1 C/U`, `2 pares` — no siempre es un número entero simple |
+| `foto_referencia_ruta` | text | sí | Ruta en el depósito `evidencias`, prefijo `checklist-ref/` — mismo depósito que las fotos de campo, sin bucket nuevo |
+| `verificaciones` | jsonb | no | `[{id, etiqueta}]` — vacío en bloques `tabla_simple`. Cada verificación se imprime como su propio renglón, con Pos/Equipo/Cantidad/Foto compartidos por `rowspan` (ver `web/lib/checklist/render.ts`) |
+| `orden` | smallint | no | Único campo que decide el renderizado — mismo patrón que `elementos.codigo` (identidad) contra `elementos.orden` (render) |
+| `notas` | text | sí | Ambigüedades del documento de origen sin resolver — mismo criterio que `elementos.notas`/`formatos.notas` |
+
+No hay tabla de "capturas" para un checklist: se imprime en blanco y punto, sin equivalente a
+`registros`/`valores`. Las columnas de fecha del documento tampoco se guardan — se derivan de los días
+del mes del ciclo abierto al generar (`new Date(anio, mes, 0).getDate()`, 31 de respaldo si no hay
+ciclo); las celdas quedan en blanco para llenarse a mano.
 
 ---
 
@@ -481,6 +536,29 @@ Las zonas entre sí se ordenan por `zonas.orden`; una zona sin `orden` conocido 
 elemento con `zona_id` nulo) va al final, alfabética. La misma función ordena el documento RAG
 (dentro de cada sección) y el informe fotográfico — así un elemento aparece en el mismo lugar
 relativo en los dos.
+
+### 3.7 El encabezado y el cierre del checklist: por columna, no al final
+
+A diferencia de §3.4 (`CIERRE_ESTANDAR` de RAG: un único bloque de firmas al final del documento), el
+checklist repite Fecha+Grupo en el encabezado y Nombre+Firma en el pie **de cada columna de fecha**,
+porque cada columna es una revisión distinta hecha por alguien distinto ese día — ver
+docs/decisiones.md D-22.
+
+```jsonc
+// web/lib/checklist/constantes.ts — igual en todos los checklist, no vive en 'formatos'
+{
+  "ENCABEZADO_COLUMNA_CHECKLIST": { "fecha": "Fecha", "grupo": "Grupo" },
+  "CIERRE_COLUMNA_CHECKLIST": { "nombre": "Nombre", "firma": "Firma" }
+}
+```
+
+Como puede haber hasta 31 columnas de fecha —más de las que caben en una hoja Carta apaisada—, un
+mismo bloque de tabla (`checklist_bloques` de tipo `tabla_verificacion` o `tabla_simple`) se reparte en
+varias `<table>` independientes, cada una con su propio encabezado/cierre completo repetidos y salto de
+página entre ellas (`web/lib/checklist/columnas.ts` función `rebanarColumnasFecha()`). La sección
+general de AÑO/MES (pedida explícitamente para identificar el mes de uso del documento impreso) sí es
+única por tabla, no por columna, y sus casillas quedan en blanco para llenarse a mano — igual que las
+celdas de Fecha/Grupo/Nombre/Firma: el checklist nunca trae un modo "lleno", siempre se imprime vacío.
 
 ---
 

@@ -1,7 +1,15 @@
-import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { obtenerFormatos, obtenerSistemasCatalogo } from "@/lib/datos";
+import { RagHub } from "./RagHub";
 
-// El índice de formatos RAG pasó a ser Configuración → Importar y
-// exportar — ver docs/decisiones.md D-21.
-export default function RagRedirect() {
-  redirect("/configuracion");
+/**
+ * Antes redirigía a /configuracion (D-21: todo formato colgaba de un
+ * sistema, así que no hacía falta pantalla propia). Un checklist con
+ * sistema_id null la necesita — ver docs/decisiones.md D-22.
+ */
+export default async function RagPage() {
+  const supabase = await createClient();
+  const [formatos, sistemas] = await Promise.all([obtenerFormatos(supabase), obtenerSistemasCatalogo(supabase)]);
+
+  return <RagHub formatos={formatos} sistemas={sistemas} />;
 }

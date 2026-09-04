@@ -34,6 +34,10 @@ venv/
 salidas/
 exportaciones/
 
+# Extracciones de RAG en trabajo (Excel + fotos de referencia): datos
+# operativos de la empresa, no se versionan -- ver scripts/extraer_checklist.py
+extracciones/
+
 # Sistema operativo y editores
 Thumbs.db
 desktop.ini

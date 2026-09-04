@@ -7,6 +7,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DatosRegistro } from "./estado";
 import { DEPOSITO } from "./rutas";
 import type {
+  ChecklistBloque,
+  ChecklistItem,
   Ciclo,
   Elemento,
   Entrada,
@@ -375,7 +377,7 @@ export async function firmarRutas(
 /** La identidad y la imagen de un RAG. No cuelga de ningún ciclo — ver
  * docs/modelo-de-datos.md §2.8. */
 const SELECT_FORMATO =
-  "id, clave, nombre, periodicidad, sistema_id, documento_referencia, revision, instrucciones, notas, columnas";
+  "id, clave, nombre, periodicidad, sistema_id, tipo_documento, documento_referencia, revision, instrucciones, notas, columnas";
 
 export async function obtenerFormatos(supabase: SupabaseClient): Promise<Formato[]> {
   const { data, error } = await supabase.from("formatos").select(SELECT_FORMATO).order("clave");
@@ -428,4 +430,53 @@ export async function obtenerElementosParaRag(
     zona: zonaResumenDe(fila),
     registro: Array.isArray(fila.registro) ? (fila.registro[0] ?? null) : fila.registro,
   })) as ElementoParaRagFila[];
+}
+
+export interface ChecklistBloqueConItems extends ChecklistBloque {
+  items: ChecklistItem[];
+}
+
+/** Para armar un DocumentoChecklist (ver web/lib/checklist/documento.ts):
+ * trae los bloques de un formato 'checklist' con sus ítems ya anidados y
+ * las URLs firmadas de las fotos de referencia que sí tienen ruta — mismo
+ * patrón que firmarRutas() usa en el resto de la app, porque el depósito
+ * 'evidencias' es privado (ver docs/decisiones.md D-22). */
+export async function obtenerChecklistCompleto(
+  supabase: SupabaseClient,
+  formatoId: string,
+): Promise<{ bloques: ChecklistBloqueConItems[]; fotoUrlPorRuta: Record<string, string> }> {
+  const { data: bloques, error: errorBloques } = await supabase
+    .from("checklist_bloques")
+    .select("id, formato_id, tipo, nombre, orden, columnas, filas_blanco")
+    .eq("formato_id", formatoId)
+    .order("orden");
+  if (errorBloques) throw errorBloques;
+
+  const bloqueIds = (bloques ?? []).map((b) => b.id as string);
+  let items: ChecklistItem[] = [];
+  if (bloqueIds.length > 0) {
+    const { data, error: errorItems } = await supabase
+      .from("checklist_items")
+      .select("id, bloque_id, categoria, pos, nombre, cantidad, foto_referencia_ruta, verificaciones, orden, notas")
+      .in("bloque_id", bloqueIds)
+      .order("orden");
+    if (errorItems) throw errorItems;
+    items = (data ?? []) as ChecklistItem[];
+  }
+
+  const rutas = items.map((i) => i.foto_referencia_ruta).filter((r): r is string => r !== null);
+  const fotoUrlPorRuta = await firmarRutas(supabase, rutas);
+
+  const itemsPorBloque = new Map<string, ChecklistItem[]>();
+  for (const item of items) {
+    if (!itemsPorBloque.has(item.bloque_id)) itemsPorBloque.set(item.bloque_id, []);
+    itemsPorBloque.get(item.bloque_id)!.push(item);
+  }
+
+  const bloquesConItems: ChecklistBloqueConItems[] = (bloques ?? []).map((b) => ({
+    ...(b as ChecklistBloque),
+    items: itemsPorBloque.get(b.id as string) ?? [],
+  }));
+
+  return { bloques: bloquesConItems, fotoUrlPorRuta };
 }

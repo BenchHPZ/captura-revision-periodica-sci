@@ -82,11 +82,13 @@ captura-sci/
 │   │       ├── recepcion/            Fase 3 — Recepcion.tsx (cliente) + actions.ts (servidor)
 │   │       ├── sistemas/[clave]/     Fase 5 + RAG fusionados (D-21): elementos, plantilla, formato y documento RAG
 │   │       ├── configuracion/        Ciclo · Sistemas · Zonas · Importar y exportar, en pestañas (D-21)
+│   │       ├── rag/                  RagHub.tsx (D-22): "Ver e imprimir" (todo formato) y "Construir tipo nuevo"
+│   │       │   └── [formato]/        RAG con sistema → redirige a /sistemas/[clave]; checklist se resuelve aquí
 │   │       ├── informe/              Fase 6 (D-17) — botón, genera el .pptx en el servidor
-│   │       ├── catalogo/, rag/,      Redirigen a /sistemas/[clave] o /configuracion — no hay pantalla aquí
+│   │       ├── catalogo/,            Redirigen a /sistemas/[clave] o /configuracion — no hay pantalla aquí
 │   │       │   tablero/              tablero/ redirige a /
 │   ├── components/                   Aviso, Boton, Campo, PanelConfirmacion, BuscadorLista, SinCiclo,
-│   │                                 NavBar, EstadoBadge — antes copiados a mano en cada pantalla (D-21)
+│   │                                 NavBar, EstadoBadge, VisorDocumento (D-22) — antes copiados a mano (D-21)
 │   └── lib/
 │       ├── supabase/                 clientes de navegador, servidor y proxy
 │       ├── tipos.ts                  formas compartidas, reflejan el diccionario de datos
@@ -97,14 +99,18 @@ captura-sci/
 │       ├── descargas.ts              descargar() — genera y dispara un archivo en el navegador
 │       ├── rutas.ts, texto.ts        rutas de Storage; búsqueda sin acentos
 │       ├── orden.ts                  criterio único de recorrido — zona, ubicación, anclaje (D-20)
+│       ├── documentos/               constantes.ts + estilos-base.ts — identidad y CSS que RAG y checklist comparten (D-22)
 │       ├── rag/                      documento.ts + render.ts + columnas.ts + estilos.ts — puros, sin Next/Supabase/React
 │       │                             (ver docs/decisiones.md D-16: pensados para una segunda entrada local)
+│       ├── checklist/                mismo patrón que rag/, para el tipo "checklist" (D-22) — no extiende DocumentoRAG
 │       └── informe/                  collage.ts (sharp) + geometria.ts + generador.ts (pptx-automizer)
 ├── supabase/
-│   ├── migrations/                   0001 esquema · 0002 sistemas fijos · 0003 RLS · 0004 Storage · 0005 formatos RAG
+│   ├── migrations/                   0001 esquema · 0002 sistemas fijos · 0003 RLS · 0004 Storage · 0005-0007 RAG y
+│   │                                 catálogos compartidos · 0008 checklist (D-22)
 │   └── seed/                         catálogo, plantillas y formatos ya extraídos, por ciclo
 └── scripts/                          utilerías en Python (requirements.txt)
     ├── extraer_rags.py               RAG en PDF → supabase/seed/{catalogo,plantillas}_<ciclo>.json
+    ├── extraer_checklist.py          Checklist en PDF → Excel de trabajo humano (D-22) — no lo lee la aplicación
     └── cargar_catalogo.py            ese JSON → Supabase (valida en seco sin --confirmar)
 ```
 
@@ -133,7 +139,8 @@ Quien se incorpore al proyecto debería leer, en orden: requerimientos, flujos y
 | Cuenta de Vercel | Plan gratuito |
 
 Dependencias de Python para las utilerías, fijadas en [`scripts/requirements.txt`](scripts/requirements.txt):
-`pypdf`, `supabase`, `python-dotenv`. El informe fotográfico ya no es una utilería de Python — se
+`pypdf`, `supabase`, `python-dotenv`, `openpyxl` (esta última sólo para `extraer_checklist.py`, que
+escribe un Excel de trabajo — ver D-22). El informe fotográfico ya no es una utilería de Python — se
 genera en el servidor (ver D-17); sus dependencias (`pptx-automizer`, `sharp`) están en
 `web/package.json`, como el resto de la aplicación.
 
@@ -210,6 +217,8 @@ archivo `.env` que no se versiona.
 | `npx tsx scripts/subir-plantilla-informe.ts --archivo <ruta> [--confirmar]` | (dentro de `web/`) Sube `Plantilla_Informe.pptx` al depósito. Una sola vez, o cuando cambie. Sin `--confirmar` sólo valida |
 | `python scripts/extraer_rags.py --formatos <carpeta> --ciclo <AAAA-MM>` | RAG en PDF → catálogo y plantillas en JSON |
 | `python scripts/cargar_catalogo.py --ciclo <AAAA-MM> [--confirmar]` | Ese JSON → Supabase. Sin `--confirmar` sólo valida |
+| `python scripts/extraer_checklist.py --pdf <ruta al PDF>` | Checklist en PDF → Excel de trabajo humano en `extracciones/` (D-22). El sistema no lo lee |
+| `npx tsx web/scripts/verificar-checklist.ts` | Pureza y consistencia de `lib/checklist/*` — mismo patrón que `verificar-rag.ts` |
 
 ## Despliegue
 
@@ -394,11 +403,32 @@ cerrar el ciclo, que tampoco tenía pantalla. Antes de mover nada se extrajeron 
 los patrones que estaban copiados a mano en cada pantalla (`Aviso`, `PanelVistaPrevia`/`PanelExito`,
 `SinCiclo`, `Campo`/`CampoTexto`/`CampoSelect`, `BuscadorLista`), y `ElementosCatalogo.tsx` se
 reescribió de fondo: zona y tipo pasan de texto libre a seleccionarse de un catálogo, ya no se pueden
-escribir valores que no existan. Las rutas viejas (`/catalogo`, `/catalogo/[sistema]`, `/rag`,
-`/rag/[formato]`, `/tablero`) redirigen a su lugar nuevo. **Deliberadamente fuera de esta pasada:**
-abrir un ciclo nuevo (sigue siendo `cargar_catalogo.py`) y mover el recorrido de captura
-(`/capturar`, "guardar y siguiente") al criterio de `lib/orden.ts` — hoy sólo lo usan el documento RAG
-y el informe; el detalle está en D-21.
+escribir valores que no existan. Las rutas viejas (`/catalogo`, `/catalogo/[sistema]`, `/tablero`)
+redirigen a su lugar nuevo — `/rag` y `/rag/[formato]` también redirigían en su momento, pero D-22 las
+reactivó (ver abajo). **Deliberadamente fuera de esta pasada:** abrir un ciclo nuevo (sigue siendo
+`cargar_catalogo.py`) y mover el recorrido de captura (`/capturar`, "guardar y siguiente") al criterio
+de `lib/orden.ts` — hoy sólo lo usan el documento RAG y el informe; el detalle está en D-21.
+
+**Un segundo tipo de documento ("checklist"), y `/rag` vuelve a existir** (fuera de la numeración de
+fases, terminada; D-22). El usuario compartió un formato que el sistema no soportaba: una lista de
+verificación diaria de una unidad (ambulancia A-01, RAG 4.1), llenada a mano en papel, que no recorre
+ningún catálogo de elementos ni pasa por el flujo de captura fotográfica — se imprime en blanco y
+punto, en horizontal, con columnas repetidas por fecha (Fecha+Grupo en el encabezado, Nombre+Firma en
+el pie de CADA columna, no un cierre único al final como en RAG). `formatos` gana `tipo_documento`
+(`'rag' | 'checklist'`) y dos tablas nuevas, `checklist_bloques`/`checklist_items` (migración
+`0008_checklist.sql`); `web/lib/checklist/` es un módulo hermano de `web/lib/rag/`, no una extensión de
+`DocumentoRAG` — forzarlo ahí habría hecho mentir a `elementoId` y a `CierreFormato`. Lo que sí es
+idéntico entre los dos motores (clasificación, razón social, domicilio, logo, paleta, mecánica
+genérica de tabla) se factorizó a `web/lib/documentos/`; la CSS completa de RAG no se reescribió para
+consumirla —tocar `render.ts`, ya en producción, sólo para des-duplicar CSS no valía el riesgo— así que
+ahí queda una duplicación deliberada y acotada. `/rag` deja de redirigir: es la pestaña independiente
+que se pidió, con "Ver e imprimir" (todo formato) y "Construir tipo nuevo" (marcador de posición hasta
+la Etapa 3: el constructor sin código y el importador de JSON). `scripts/extraer_checklist.py` extrae
+el PDF de origen a un Excel de trabajo humano —el sistema no lo lee— con el mismo principio de
+`extraer_rags.py`: señala ambigüedades (Pos duplicados, huecos de numeración) en vez de resolverlas.
+Verificado en vivo contra el proyecto real: `web/scripts/verificar-checklist.ts` (mismo patrón que
+`verificar-rag.ts`) y un formato de prueba sembrado, visto en el navegador y luego retirado. El detalle
+completo está en D-22.
 
 **Ciclo piloto:** agosto 2026. Se libera para los dos sistemas internos —54 botones avisadores y 71
 hidrantes interiores— y da seguimiento a los tres restantes mediante recepción. Los criterios con los

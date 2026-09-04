@@ -74,12 +74,20 @@ export interface Zona {
  * distinto a los demás (ver docs/decisiones.md D-15 §7.1). `instrucciones`
  * en esta tabla son sólo las PROPIAS de este formato (p. ej. "P = Pie, G
  * = Gabinete"); se concatenan con la general al armar el documento. */
+/** Qué motor de renderizado le corresponde a este formato — ver
+ * docs/decisiones.md D-22. 'rag' recorre un catálogo de elementos con
+ * web/lib/rag/; 'checklist' imprime sus propios bloques/ítems (ver
+ * web/lib/checklist/) sin pasar por ningún catálogo ni por el flujo de
+ * captura fotográfica. */
+export type TipoDocumentoFormato = "rag" | "checklist";
+
 export interface Formato {
   id: string;
   clave: string;
   nombre: string;
   periodicidad: string;
   sistema_id: string | null;
+  tipo_documento: TipoDocumentoFormato;
   /** Va al pie del documento, junto con `revision` — no al encabezado. */
   documento_referencia: string;
   revision: string | null;
@@ -89,8 +97,39 @@ export interface Formato {
    * docs/decisiones.md D-19: RAG 2.2 no las lleva ambas porque
    * 'ubicacion' está capturada en 0 de 33 hidrantes exteriores. Las
    * demás columnas (id, numeración, tipo si el sistema lo tiene, puntos,
-   * observaciones) no son opcionales. */
+   * observaciones) no son opcionales. Sin significado para un formato
+   * 'checklist' — ver docs/decisiones.md D-22. */
   columnas: { ubicacion: boolean; referencia: boolean };
+}
+
+/** Un bloque de un formato 'checklist' (portada de fotos, tabla de
+ * equipo, sub-checklist mecánico, bitácora libre) — forma cruda tal cual
+ * la base, antes de resolverse a DocumentoChecklist (ver
+ * web/lib/checklist/documento.ts). Ver docs/decisiones.md D-22. */
+export interface ChecklistBloque {
+  id: string;
+  formato_id: string;
+  tipo: "portada_fotos" | "tabla_verificacion" | "tabla_simple" | "bitacora_libre";
+  nombre: string;
+  orden: number;
+  /** Sólo 'bitacora_libre': [{id, etiqueta}] de sus columnas fijas. */
+  columnas: { id: string; etiqueta: string }[];
+  /** Sólo 'bitacora_libre'. */
+  filas_blanco: number | null;
+}
+
+/** Un renglón de un ChecklistBloque — forma cruda tal cual la base. */
+export interface ChecklistItem {
+  id: string;
+  bloque_id: string;
+  categoria: string | null;
+  pos: string | null;
+  nombre: string;
+  cantidad: string | null;
+  foto_referencia_ruta: string | null;
+  verificaciones: { id: string; etiqueta: string }[];
+  orden: number;
+  notas: string | null;
 }
 
 export interface CicloFechas {

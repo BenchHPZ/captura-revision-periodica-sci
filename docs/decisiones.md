@@ -933,3 +933,77 @@ enfocado, no menos. `ElementosCatalogo.tsx` cambió de fondo, no sólo de lugar:
 texto libre se sustituyeron por un selector sobre el catálogo de zonas (D-18), y `tipo` por un selector
 sobre el diccionario del sistema — ya no se puede escribir una zona o un tipo que no exista en el
 catálogo correspondiente.
+
+## D-22 · Un segundo tipo de documento ("checklist"), y /rag vuelve a existir
+
+**Estado:** vigente
+
+**Contexto.** El usuario compartió un formato de VW que el sistema no soporta hoy: una lista de
+verificación diaria de una unidad (ambulancia A-01, RAG 4.1), llenada a mano en papel por especialistas
+en turno. No recorre un catálogo de elementos ni pasa por el flujo de captura fotográfica — se imprime
+en blanco y punto. Habrá más unidades. Estructuralmente es distinto de los cinco RAG mensuales: ahí una
+fila es un elemento de catálogo y una columna es un punto de revisión de una plantilla compartida, con
+un único bloque de cierre al final del documento; aquí una fila es un ítem propio del documento (sin
+relación a `elementos`/`sistemas`/`plantillas`), una columna es una fecha de revisión repetida con
+Fecha+Grupo en el encabezado y Nombre+Firma en el pie — el cierre se repite POR COLUMNA, no una sola vez
+al final. El esquema ya anticipaba esto sin usarlo: `formatos.periodicidad` no está atada a `'mensual'`
+y `formatos.sistema_id` ya es nullable ("formatos que no recorren catálogo, por evento" —
+docs/modelo-de-datos.md); y el comentario de `CierreFormato.repetir` en `web/lib/rag/tipos.ts` dice
+literalmente "para que un formato de otra periodicidad lo pueda resolver distinto más adelante".
+
+D-21 decomisionó `/rag` y `/rag/[formato]` a redirecciones porque, en ese momento, todo formato RAG
+colgaba de un sistema — "un formato sin sistema asociado no tiene pantalla propia: se administra desde
+Configuración" dejó de ser cierto en cuanto un tipo de documento entero no tiene sistema asociado nunca.
+
+**Decisión.**
+
+- **`web/lib/checklist/` es un módulo hermano de `web/lib/rag/`, no una extensión de `DocumentoRAG`.**
+  Forzar el checklist dentro de `RenglonRAG`/`CierreFormato` habría hecho mentir a `elementoId` (no hay
+  elemento) y habría obligado a `CierreFormato` a ganar un modo "por columna" que ningún RAG usa nunca —
+  exactamente el tipo de divergencia condicional que D-19 documenta haber eliminado una vez.
+- **Lo que SÍ es idéntico entre los dos motores** (clasificación, razón social, domicilio, logo, paleta
+  de color, mecánica genérica de `<table>`) se factoriza a `web/lib/documentos/` — `constantes.ts` y
+  `estilos-base.ts`. `web/lib/rag/constantes.ts` reexporta desde ahí sin romper sus imports. La CSS
+  completa de RAG (`web/lib/rag/estilos.ts`) NO se reescribió para consumir la base compartida: hacerlo
+  exigía también renombrar las clases que emite `web/lib/rag/render.ts`, y tocar ese render.ts —ya
+  verificado, en producción— sólo para des-duplicar CSS no valía el riesgo. La duplicación que queda es
+  la de "RAG ya traía su propia hoja completa antes de que existiera un segundo tipo de documento", no
+  la que D-22 se proponía evitar hacia adelante.
+- **`formatos` gana `tipo_documento` (`'rag' | 'checklist'`, default `'rag'`)** — decide qué motor arma
+  el documento. Dos tablas nuevas, `checklist_bloques` y `checklist_items` (migración
+  `0008_checklist.sql`), guardan el contenido propio de un checklist. `categoria` en `checklist_items`
+  es texto libre, NO fk a `zonas`: zonas es a propósito un catálogo único de planta (D-18) pensado para
+  que elementos de SISTEMAS distintos compartan ubicación física — las categorías de un checklist
+  ("EQUIPO MEDICO", "BOTIQUIN DE AMBULANCIA") son propias de ese checklist y no necesitan ese catálogo
+  compartido. `pos` es texto sin restricción de unicidad (el PDF de origen trae Pos duplicados reales:
+  "63" se repite 6 veces); `orden` es lo único que decide el renderizado — mismo patrón que
+  `elementos.codigo` (identidad) contra `elementos.orden` (render).
+- **Las columnas de fecha no se guardan.** Se derivan de los días del mes del ciclo abierto al generar
+  (`new Date(anio, mes, 0).getDate()`, con 31 de respaldo si no hay ciclo) — las celdas quedan en blanco
+  para llenarse a mano, nunca con una fecha real preimpresa, igual que el papel de origen.
+- **Orientación apaisada, pedido explícito del usuario** — única diferencia real de `@page` frente a
+  RAG (`size: letter landscape` contra `portrait`). Como puede haber hasta 31 columnas de fecha, más de
+  las que caben en una hoja, cada bloque de tabla se reparte en VARIAS `<table>` independientes (una por
+  grupo de columnas que sí cabe, `rebanarColumnasFecha()` en `columnas.ts`), cada una con su propio
+  thead/tfoot completo y `page-break-before` entre ellas — mismo mecanismo nativo de repetición que D-16
+  documenta para RAG, aplicado varias veces en vez de una.
+- **Sin tabla de "capturas".** Este tipo de documento se imprime en blanco y punto; no tiene equivalente
+  a `registros`/`valores`. Si algún día se pide captura digital de un checklist, es una decisión nueva y
+  separada — mismo criterio de alcance acotado que D-12.
+- **`/rag` deja de redirigir.** Pasa a ser la pestaña independiente que pidió el usuario: "Ver e
+  imprimir" lista TODOS los formatos (un RAG con sistema enlaza a `/sistemas/[clave]`, preservando lo
+  que D-21 ganó; un checklist enlaza a `/rag/[formato]`, resuelto aquí mismo); "Construir tipo nuevo"
+  queda como marcador de posición hasta la Etapa 3 del plan de ampliación de RAGs (el constructor sin
+  código y el importador de JSON). `web/components/NavBar.tsx` gana la entrada "RAG".
+- **La lógica de impresión por iframe oculto se generaliza** de `sistemas/[clave]/VisorRAG.tsx` a
+  `web/components/VisorDocumento.tsx` (prop `soloVacio` para el checklist, que nunca alterna
+  Vacío/Lleno). `VisorRAG.tsx` queda como envoltorio delgado sobre el componente compartido, para no
+  tocar el import que ya usa `sistemas/[clave]/page.tsx`.
+
+**Verificación.** `web/scripts/verificar-checklist.ts` (mismo patrón que `verificar-rag.ts`): confirma
+que `lib/checklist/*` es puro (importable desde Node suelto) y que, en cada `<table>` que arma
+`render.ts`, el colgroup, el `<th>` del encabezado principal y los `colspan` usados coinciden entre sí —
+agravado aquí porque un solo bloque puede repartirse en varias tablas, así que hay que comprobarlo en
+cada una, no sólo en la primera — y que las columnas de fecha repartidas entre todas las tablas de un
+bloque suman exactamente los días pedidos. `verificar-rag.ts` se corrió de nuevo sin cambios de
+comportamiento, confirmando que mover las constantes compartidas no alteró los cinco RAG existentes.

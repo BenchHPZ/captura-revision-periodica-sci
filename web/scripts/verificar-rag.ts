@@ -36,6 +36,7 @@ function formato(overrides: Partial<Formato> = {}): Formato {
     nombre: "Formato de prueba",
     periodicidad: "mensual",
     sistema_id: "s1",
+    tipo_documento: "rag",
     documento_referencia: "I1.15M2_4037-002",
     revision: "5",
     instrucciones: [],
