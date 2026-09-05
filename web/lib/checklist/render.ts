@@ -21,9 +21,9 @@ import type {
   BloquePortadaFotos,
   BloqueTablaSimple,
   BloqueTablaVerificacion,
-  CategoriaChecklist,
   ColumnaFecha,
   DocumentoChecklist,
+  GrupoChecklist,
   ItemChecklist,
   VerificacionChecklist,
 } from "./tipos";
@@ -129,8 +129,8 @@ function encabezadoColumnasFijas(columnasFijas: ColumnaFijaChecklist[], columnas
 function celdaFijaPrimeraFila(columna: ColumnaFijaChecklist, item: ItemChecklist, totalFilas: number): string {
   const rowspan = totalFilas > 1 ? ` rowspan="${totalFilas}"` : "";
   switch (columna.id) {
-    case "pos":
-      return `<td class="${columna.clase}"${rowspan}>${escapeHtml(item.pos ?? "")}</td>`;
+    case "numero":
+      return `<td class="${columna.clase}"${rowspan}>${item.numero}</td>`;
     case "nombre":
     case "descripcion":
       return `<td class="${columna.clase}"${rowspan}>${escapeHtml(item.nombre)}</td>`;
@@ -173,33 +173,76 @@ function renderizarFilasItem(item: ItemChecklist, columnasFijas: ColumnaFijaChec
     .join("");
 }
 
-function renderizarCategorias(
-  categorias: CategoriaChecklist[],
-  columnasFijas: ColumnaFijaChecklist[],
-  columnasFecha: ColumnaFecha[],
-  totalCols: number,
-): string {
-  return categorias
-    .map((cat) => {
-      const banner = `<tr class="chk-categoria"><th colspan="${totalCols}">${escapeHtml(cat.nombre)}</th></tr>`;
-      const filas = cat.items.map((item) => renderizarFilasItem(item, columnasFijas, columnasFecha)).join("");
-      return banner + filas;
-    })
-    .join("");
+/** Una "hoja" del árbol de GrupoChecklist (máx. 2 niveles, invariante ya
+ * establecida) — el resultado de aplanarlo a una lista ordenada, en el
+ * mismo orden en que se debe imprimir. */
+interface HojaGrupo {
+  nombreExterno: string | null;
+  nombreInterno: string | null;
+  items: ItemChecklist[];
+}
+
+/** Aplana GrupoChecklist a una lista de hojas — sucesora de la vieja
+ * renderizarGrupos(), que recorría el árbol e imprimía los banners
+ * inline en un <tbody> compartido por todo el bloque. Ahí un banner no
+ * podía repetirse al paginar (los navegadores sólo repiten <thead>/
+ * <tfoot> — D-16); moverlo a una tabla POR HOJA (ver renderizarBloqueTabla)
+ * exige primero tener la lista de hojas por separado. Un grupo con
+ * subgrupos aporta una hoja por subgrupo (comparten el mismo
+ * nombreExterno); un grupo sin subgrupos es su propia hoja. Ver
+ * docs/decisiones.md D-24. */
+function hojasDeGrupos(grupos: GrupoChecklist[]): HojaGrupo[] {
+  const hojas: HojaGrupo[] = [];
+  for (const grupo of grupos) {
+    if (grupo.subgrupos.length > 0) {
+      for (const subgrupo of grupo.subgrupos) {
+        hojas.push({ nombreExterno: grupo.nombre, nombreInterno: subgrupo.nombre, items: subgrupo.items });
+      }
+    } else {
+      hojas.push({ nombreExterno: grupo.nombre, nombreInterno: null, items: grupo.items });
+    }
+  }
+  return hojas;
+}
+
+/** Los banners de una hoja, para el <thead> de su propia tabla — mismas
+ * clases que antes (`chk-categoria` verde para el externo, `chk-subgrupo`
+ * más claro para el interno), sólo reubicadas: al vivir en <thead> se
+ * repiten en cada página que la hoja llegue a ocupar. Una hoja sin
+ * nombre en algún nivel (agrupación vacía o de un solo nivel) no imprime
+ * ese banner — mismo resultado visual que antes. */
+function renderizarBannersHoja(hoja: HojaGrupo, totalCols: number): string {
+  const externo =
+    hoja.nombreExterno !== null ? `<tr class="chk-categoria"><th colspan="${totalCols}">${escapeHtml(hoja.nombreExterno)}</th></tr>` : "";
+  const interno =
+    hoja.nombreInterno !== null ? `<tr class="chk-subgrupo"><th colspan="${totalCols}">${escapeHtml(hoja.nombreInterno)}</th></tr>` : "";
+  return externo + interno;
 }
 
 /** Un bloque de tabla (equipo o mecánico) repartido en tantas <table>
- * como haga falta para que las columnas de fecha quepan en una hoja
- * apaisada — ver ./columnas.ts. columnasFijasDe() es la única fuente de
- * columnas fijas (incluida "Verificación" cuando aplica): el colgroup, el
- * <th> del encabezado principal y los colspan de las demás filas se
- * derivan todos de la MISMA lista, así que sus conteos coinciden por
- * construcción — mismo principio que D-19 en RAG. */
+ * como haga falta: una por cada combinación de rebanada de columnas de
+ * fecha (ver ./columnas.ts, por ancho de página) × hoja de agrupación
+ * (ver hojasDeGrupos(), por banner de sección) — columnasFijasDe() sigue
+ * siendo la única fuente de columnas fijas (incluida "Verificación"
+ * cuando aplica): el colgroup, el <th> del encabezado principal y los
+ * colspan de las demás filas se derivan todos de la MISMA lista, así que
+ * sus conteos coinciden por construcción — mismo principio que D-19 en
+ * RAG.
+ *
+ * El salto de página forzado (`chk-salto-pagina`) sólo se aplica al
+ * cambiar de REBANADA de fecha (`indiceHoja === 0`), no de hoja a hoja
+ * dentro de la misma rebanada — si no, cada categoría chica forzaría su
+ * propia página, deshaciendo el ahorro de papel que ya existía. Las
+ * hojas de una misma rebanada fluyen libremente; cada una sigue
+ * mostrando su propio pie en cualquier página que ocupe, así que ninguna
+ * queda sin firma aunque comparta página con otra hoja — verificado
+ * contra el PDF real de la ambulancia (ver docs/decisiones.md D-24). */
 function renderizarBloqueTabla(doc: DocumentoChecklist, bloque: BloqueTablaVerificacion | BloqueTablaSimple, primerBloqueGlobal: boolean): string {
   const columnasFijas = columnasFijasDe(bloque.tipo);
-  const grupos = rebanarColumnasFecha(doc.columnasFecha, columnasFijas);
+  const gruposFecha = rebanarColumnasFecha(doc.columnasFecha, columnasFijas);
+  const hojas = hojasDeGrupos(bloque.grupos);
 
-  return grupos
+  return gruposFecha
     .map((grupoFechas, indice) => {
       const totalCols = columnasFijas.length + grupoFechas.length;
       const colgroup = [
@@ -207,19 +250,23 @@ function renderizarBloqueTabla(doc: DocumentoChecklist, bloque: BloqueTablaVerif
         ...grupoFechas.map(() => `<col style="width:8mm">`),
       ].join("");
 
-      const saltoPagina = primerBloqueGlobal && indice === 0 ? "" : "chk-salto-pagina";
+      return hojas
+        .map((hoja, indiceHoja) => {
+          const primeraTablaGlobal = primerBloqueGlobal && indice === 0 && indiceHoja === 0;
+          const saltoPagina = !primeraTablaGlobal && indiceHoja === 0 ? "chk-salto-pagina" : "";
 
-      return `
+          return `
 <table class="doc-tabla chk-tabla ${saltoPagina}">
   <colgroup>${colgroup}</colgroup>
   <thead>
-    ${renderizarEncabezadoGeneral(doc, totalCols, bloque.nombre, primerBloqueGlobal && indice === 0)}
+    ${renderizarEncabezadoGeneral(doc, totalCols, bloque.nombre, primeraTablaGlobal)}
     ${filaPorColumnaFecha(ENCABEZADO_COLUMNA_CHECKLIST.fecha, columnasFijas, grupoFechas, "chk-celda-marca")}
     ${filaPorColumnaFecha(ENCABEZADO_COLUMNA_CHECKLIST.grupo, columnasFijas, grupoFechas, "chk-celda-marca")}
     ${encabezadoColumnasFijas(columnasFijas, grupoFechas)}
+    ${renderizarBannersHoja(hoja, totalCols)}
   </thead>
   <tbody>
-    ${renderizarCategorias(bloque.categorias, columnasFijas, grupoFechas, totalCols)}
+    ${hoja.items.map((item) => renderizarFilasItem(item, columnasFijas, grupoFechas)).join("")}
   </tbody>
   <tfoot>
     ${filaPorColumnaFecha(CIERRE_COLUMNA_CHECKLIST.nombre, columnasFijas, grupoFechas, "chk-celda-cierre")}
@@ -227,16 +274,52 @@ function renderizarBloqueTabla(doc: DocumentoChecklist, bloque: BloqueTablaVerif
     ${renderizarFranjaPie(doc, totalCols)}
   </tfoot>
 </table>`;
+        })
+        .join("");
     })
     .join("");
 }
 
-/** Franja fija con las fotos de identificación de la unidad — no es una
- * tabla de columnas de fecha, es la portada del documento. Simplificada
+// Anchos propios de la portada (no los de columnas.ts): a diferencia de
+// Equipo/Mecánico, la portada NUNCA se reparte en varias páginas por
+// fecha — siempre trae las hasta 31 columnas completas en una sola hoja
+// (ver docs/decisiones.md D-24) — así que su presupuesto de ancho es
+// distinto: una columna de fecha un poco más angosta que la de
+// Equipo/Mecánico (7.5mm en vez de 8mm) deja lugar para una columna de
+// etiqueta legible ("Fecha"/"Grupo"/"Nombre"/"Firma" sin partirse en dos
+// renglones): 14mm + 31 × 7.5mm = 246.5mm, dentro del presupuesto de
+// ~255mm de una hoja Carta apaisada.
+const ANCHO_ETIQUETA_PORTADA_MM = 14;
+const ANCHO_COLUMNA_FECHA_PORTADA_MM = 7.5;
+
+/** Portada de fotos de identificación de la unidad — antes un <div> suelto
+ * sin el encabezado/pie estándar; ahora una <table> más, con la misma
+ * estructura que Equipo/Mecánico (encabezado general, AÑO/MES, Fecha/Grupo,
+ * Nombre/Firma, franja-pie) para que desde la portada también se pueda
+ * identificar el día/grupo de cada revisión y quién la firmó — pedido
+ * explícito del usuario, ver docs/decisiones.md D-24. Simplificada
  * respecto al PDF de origen: sin la leyenda gráfica de marcado de daños
- * (golpe/abollón/rayón), que es un detalle visual, no estructural —
- * queda como mejora posterior si el área la pide. */
+ * (golpe/abollón/rayón), que es un detalle visual, no estructural — queda
+ * como mejora posterior si el área la pide. */
 function renderizarPortada(doc: DocumentoChecklist, bloque: BloquePortadaFotos): string {
+  const columnaEtiqueta: ColumnaFijaChecklist = {
+    id: "etiqueta",
+    etiqueta: "",
+    anchoMM: ANCHO_ETIQUETA_PORTADA_MM,
+    clase: "chk-celda-etiqueta-portada",
+  };
+  const columnasFijas = [columnaEtiqueta];
+  // Todas las columnas de fecha, sin rebanar — el presupuesto de ancho de
+  // la portada (ver arriba) ya está pensado para que quepan las 31 en una
+  // sola tabla, a diferencia de Equipo/Mecánico.
+  const grupoFechas = doc.columnasFecha;
+  const totalCols = columnasFijas.length + grupoFechas.length;
+
+  const colgroup = [
+    `<col style="width:${ANCHO_ETIQUETA_PORTADA_MM}mm">`,
+    ...grupoFechas.map(() => `<col style="width:${ANCHO_COLUMNA_FECHA_PORTADA_MM}mm">`),
+  ].join("");
+
   const tarjetas = bloque.items
     .map(
       (item) => `
@@ -249,16 +332,26 @@ function renderizarPortada(doc: DocumentoChecklist, bloque: BloquePortadaFotos):
     )
     .join("");
 
+  // La portada es siempre el primer bloque del documento (ver
+  // renderizarCuerpoChecklist): las instrucciones se muestran aquí, y no
+  // hace falta salto de página forzado — no hay nada antes de qué separarse.
   return `
-<div class="chk-portada">
-  <div class="doc-encabezado-linea chk-portada-encabezado">
-    ${doc.encabezado.clasificacion ? `<span class="doc-clasificacion">${escapeHtml(doc.encabezado.clasificacion)}</span>` : "<span></span>"}
-    <span class="doc-logo">${LOGO_VW_SVG}</span>
-    <span></span>
-  </div>
-  <div class="doc-titulo chk-portada-titulo">${escapeHtml(doc.nombre)}</div>
-  <div class="chk-portada-grid">${tarjetas}</div>
-</div>`;
+<table class="doc-tabla chk-tabla chk-portada">
+  <colgroup>${colgroup}</colgroup>
+  <thead>
+    ${renderizarEncabezadoGeneral(doc, totalCols, bloque.nombre, true)}
+    ${filaPorColumnaFecha(ENCABEZADO_COLUMNA_CHECKLIST.fecha, columnasFijas, grupoFechas, "chk-celda-marca")}
+    ${filaPorColumnaFecha(ENCABEZADO_COLUMNA_CHECKLIST.grupo, columnasFijas, grupoFechas, "chk-celda-marca")}
+  </thead>
+  <tbody>
+    <tr><td class="chk-portada-celda-grid" colspan="${totalCols}"><div class="chk-portada-grid">${tarjetas}</div></td></tr>
+  </tbody>
+  <tfoot>
+    ${filaPorColumnaFecha(CIERRE_COLUMNA_CHECKLIST.nombre, columnasFijas, grupoFechas, "chk-celda-cierre")}
+    ${filaPorColumnaFecha(CIERRE_COLUMNA_CHECKLIST.firma, columnasFijas, grupoFechas, "chk-celda-cierre")}
+    ${renderizarFranjaPie(doc, totalCols)}
+  </tfoot>
+</table>`;
 }
 
 function renderizarBitacora(doc: DocumentoChecklist, bloque: BloqueBitacoraLibre, primerBloqueGlobal: boolean): string {

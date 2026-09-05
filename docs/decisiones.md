@@ -1007,3 +1007,308 @@ agravado aquí porque un solo bloque puede repartirse en varias tablas, así que
 cada una, no sólo en la primera — y que las columnas de fecha repartidas entre todas las tablas de un
 bloque suman exactamente los días pedidos. `verificar-rag.ts` se corrió de nuevo sin cambios de
 comportamiento, confirmando que mover las constantes compartidas no alteró los cinco RAG existentes.
+
+**Revisión (agrupación configurable por categoría y ubicación física).** Mientras se seguía trabajando
+el Excel de la ambulancia (Etapa 1 del plan de ampliación de RAGs), apareció una columna nueva,
+`ubicacion_fisica` — independiente de `categoria`, y ambas debían mostrarse como sección agrupada en el
+documento impreso. Es, de hecho, la respuesta directa a un requisito original ("secciones habilitadas
+para identificar correctamente dónde encontrar los elementos") que había quedado resuelto sólo a medias
+en la primera pasada (sólo se agrupaba por `categoria`). El orden de anidado (ubicación física por
+fuera, categoría por dentro, en el caso de la ambulancia) se dejó **configurable por bloque**, no fijo
+en código — un checklist futuro podría necesitarlo invertido, a un solo nivel, o sin agrupar — porque
+el usuario lo pidió explícitamente así.
+
+Migración `0009_checklist_agrupacion.sql`: `checklist_items` gana `ubicacion_fisica text`;
+`checklist_bloques` gana `agrupacion jsonb` (arreglo de 0 a 2 elementos de
+`{"categoria","ubicacion_fisica"}`, default `["ubicacion_fisica","categoria"]`) — vive en el bloque, no
+en el formato, porque distintos bloques del mismo checklist pueden necesitar un orden distinto (p. ej.
+"Equipo" agrupado y "Mecánico" plano). `CategoriaChecklist { nombre, items }` en
+`web/lib/checklist/tipos.ts` se generalizó a un nodo recursivo `GrupoChecklist { nombre, items,
+subgrupos }` de hasta 2 niveles — un nodo hoja trae `items`, un nodo con un nivel más debajo trae
+`subgrupos`; `agrupacion=[]` produce un único nodo raíz sin `nombre` (sin banner, plano). `documento.ts`
+gana `agruparItems()` (reemplaza a `agruparPorCategoria()`): genérica sobre 0, 1 o 2 niveles según el
+arreglo del bloque, no hardcodea qué campo va primero. `render.ts` gana `renderizarGrupos()`, recorrido
+recursivo con dos clases CSS distintas — `.chk-categoria` (verde vívido) para el banner externo,
+`.chk-subgrupo` (gris claro, `--vw-dsb-20`) para el interno, para que se lea subordinado sin competir.
+
+Verificado con dos casos nuevos en `verificar-checklist.ts` (2 niveles y 0 niveles) y en vivo contra el
+proyecto remoto: banner externo con los valores de `ubicacion_fisica` ("Cabina", "Compartimento
+trasero"), banner interno con los de `categoria` ("RECURSOS FISICOS DE APOYO", "EQUIPO MEDICO") anidado
+debajo de cada uno, y el bloque mecánico (`agrupacion=[]`) sin ningún banner — mismo resultado visual
+que tenía antes de este cambio.
+
+**Revisión (constructor de checklist e importación JSON — Etapa 3).** "Construir tipo nuevo" deja de
+ser un marcador de posición: `web/app/(app)/rag/ConstructorChecklist.tsx` monta un editor de
+identidad+bloques+ítems (mismo patrón add/quitar/reordenar con flechas que `PlantillaEditor.tsx`, no
+drag&drop) y una sección de importación de un JSON ya armado, en la misma pantalla. Los dos caminos
+terminan en las mismas dos funciones de `web/app/(app)/rag/actions.ts`:
+`previsualizarChecklist()`/`confirmarChecklist()`, que reciben la forma `ChecklistImportado` (documentada
+en docs/modelo-de-datos.md §3.5.5) sin que importe si esa forma la armó el formulario o vino de un
+archivo.
+
+- **Reemplazo completo por `clave`, no diff incremental** — a diferencia de `reconciliarCatalogo()` (que
+  concilia elemento por elemento y sólo desactiva lo que ya no aparece), aquí `confirmarChecklist()`
+  hace `upsert` del `formato` por `clave` y luego borra TODOS sus `checklist_bloques` (el `on delete
+  cascade` de la migración 0008 se lleva los `checklist_items`) antes de volver a insertarlos completos.
+  Un checklist es una estructura anidada de baja frecuencia de cambio; intentar calzar ítems viejos
+  contra nuevos por identidad (¿por `pos`? ¿por `nombre`? ninguno es estable — el PDF de origen trae
+  `pos` repetidos) habría sido más riesgo que beneficio. La consecuencia aceptada: reimportar borra y
+  vuelve a crear los `id` de bloques e ítems en cada ocasión — no hay nada más, en este tipo de
+  documento, que referencie esos `id` desde otra tabla (a diferencia de `elementos`, que si se borrara
+  se llevaría `registros`/`fotos` con él).
+- **Validación de forma sin librería de esquema** (ni zod ni similar en el repo) — mismo criterio que
+  `reconciliarCatalogo()`/`reconciliarFormatos()` en `configuracion/actions.ts`: comprobaciones manuales
+  que lanzan error para lo que impide guardar (falta `clave`, tipo de bloque desconocido, `agrupacion`
+  con un campo repetido o fuera de `categoria`/`ubicacion_fisica`) y acumulan advertencia para lo que sí
+  se puede guardar pero probablemente sea un descuido (un bloque de tabla sin ítems, más de un
+  `portada_fotos` o `bitacora_libre` — `renderizarCuerpoChecklist()` sólo toma el primero de cada uno, un
+  segundo se imprimiría como si no existiera).
+- **La foto de referencia se sube antes de previsualizar, no al confirmar** — mismo patrón que
+  `Formulario.tsx` (D-06): el navegador sube directo a `evidencias/checklist-ref/{clave}/{itemId}.{ext}`
+  con la llave pública en cuanto se elige el archivo, y sólo la ruta ya subida viaja en el JSON. Exige
+  que la "Clave" del formato ya esté escrita antes de subir una foto (si no, no hay prefijo de carpeta);
+  el formulario lo señala en vez de subir a una carpeta temporal que luego habría que mover.
+- **`periodicidad` deja de ser fija a `'mensual'` en la práctica** — el formulario y el JSON la traen
+  como campo libre (default `"diario"`, el caso real de un checklist de unidad), sin ninguna validación
+  de valores permitidos: sigue siendo texto libre en el esquema (ver docs/modelo-de-datos.md §2.8), la
+  Etapa 3 sólo es la primera vez que algo distinto de `"mensual"` se escribe desde la aplicación en vez
+  de por migración.
+
+Verificado con `tsc --noEmit` y `eslint` limpios (el módulo de acciones y el constructor no forman parte
+de `verificar-checklist.ts`, que sólo cubre `lib/checklist/*` puro) y en vivo contra el proyecto remoto:
+una unidad ficticia (`RAG 9.9`) definida sólo desde la UI —tres bloques, agrupación de dos niveles en
+"Equipo"— se guardó, apareció en "Ver e imprimir" y se imprimió en apaisado con el mismo motor que la
+ambulancia (banners "Cabina"/"Compartimento trasero" por fuera, "RECURSOS FISICOS DE APOYO"/"EQUIPO
+MEDICO" anidados por dentro, AÑO/MES, franja de pie). Reimportada la misma clave con un bloque distinto
+(un solo ítem, "Guantes de nitrilo", sin agrupación), el documento impreso quedó únicamente con ese
+ítem — sin rastro de "Cinturones de seguridad", "Camilla rígida", el bloque "Mecánico" ni "Bitácora" de
+la primera versión, confirmando que el reemplazo por `clave` no deja bloques ni ítems huérfanos. Datos de
+prueba retirados después con el mismo script desechable de la Etapa 2b. La subida de foto de referencia
+(`subirFoto()` en `ConstructorChecklist.tsx`) se revisó por código —mismo patrón que `Formulario.tsx`,
+mismo bucket y política RLS ya en producción— pero no se probó subiendo un archivo real en esta pasada;
+importar el JSON real de la A-01 (Etapa 1), que sí trae fotos de referencia, es la primera oportunidad
+real de ejercitarla.
+
+## D-23 · Ciclo de vida de `formatos`: baja recuperable, borrado permanente y columnas de fecha explícitas
+
+**Estado:** vigente
+
+**Contexto.** Con dos tipos de formato conviviendo en `/rag` (D-22), el usuario pidió cuatro cosas
+relacionadas: distinguir visualmente los RAG mensuales de los checklists en la lista; poder **editar**
+un checklist ya guardado en el sitio, igual que ya se puede editar un RAG mensual desde
+`/sistemas/[clave]` (antes sólo se podía crear uno nuevo o verlo impreso — nunca modificarlo); volver
+**configurable por checklist** cuántas columnas de fecha imprime, en vez de derivarlas del ciclo abierto
+en tiempo de solicitud (un dato que ni siquiera tiene sentido para un documento que no pertenece a
+ningún ciclo); y un botón para **eliminar** cualquier formato, de cualquier tipo, con dos formas: baja
+recuperable y borrado permanente. De regalo, también pidió poder dar de alta los RAG mensuales desde
+esta misma pantalla — antes sólo se cargaban por importación masiva de JSON en Configuración.
+
+**Decisión.**
+
+- **`formatos` gana `activo boolean not null default true`** — mismo patrón que `elementos.activo`/
+  `sistemas.activo`/`zonas.activo` (D-18): no borra nada, sólo saca la fila de las listas por defecto.
+  Aplica a **ambos** tipos de formato por igual, con una sola acción compartida
+  (`cambiarActivoFormato()`), y una sola UI compartida (`FormatosLista.tsx`, ver abajo) — evita duplicar
+  la lógica una vez en `/sistemas/[clave]` y otra en `/rag/[formato]`.
+- **`formatos` gana `columnas_fecha smallint not null default 31`** — antes `rag/[formato]/page.tsx`
+  calculaba `new Date(ciclo.anio, ciclo.mes, 0).getDate()` con el ciclo ABIERTO ese día, atando un dato
+  propio del documento a qué mes estuviera corriendo la captura en ese momento; dos checklists de
+  distinta frecuencia no podían tener conteos distintos, y editar el checklist en un mes distinto al de
+  su creación cambiaba silenciosamente cuántas columnas imprimía. Ahora es explícito, propio de cada
+  formato, y se edita junto con el resto de su identidad en `ConstructorChecklist.tsx`. El default 31
+  iguala el respaldo que ya usaba `DIAS_POR_DEFECTO`, así que aplicar la migración no cambia el
+  documento impreso de ningún checklist ya cargado hasta que alguien lo edite explícitamente. Sin
+  significado para `tipo_documento='rag'`.
+- **Borrado permanente, primera vez que una fila de DEFINICIÓN se borra de verdad** — hasta ahora el
+  único hard-delete real de la aplicación era `fotos` (una fila hoja de captura, con su objeto de
+  Storage). Borrar un `formatos` es un tipo de operación distinto (borra una DEFINICIÓN, no una
+  captura), así que exige una confirmación más pesada, construida con dos condiciones exigidas del lado
+  del **servidor** en `eliminarFormatoPermanente()`, no sólo en la UI: (1) el formato debe estar de baja
+  primero — la baja ES el paso de vista previa obligatorio de este borrado, no un botón aparte —, y (2)
+  hay que teclear la `clave` exacta como confirmación. Es seguro por construcción: verificado contra las
+  10 migraciones que **nada** referencia `formatos.id` salvo `checklist_bloques.formato_id` (cascada,
+  migración 0008) — `elementos`/`plantillas`/`registros`/`fotos` cuelgan de `sistema_id`+`ciclo_id`, no
+  de `formatos.id`, así que borrar un formato de cualquier tipo nunca rompe la captura de un sistema; el
+  sistema se queda sin "documento" hasta que se le asigne uno nuevo, exactamente el estado que
+  `/sistemas/[clave]/page.tsx` ya toleraba (`formato === null`) antes de esta característica. No limpia
+  Storage (`checklist-ref/{clave}/…`) — mismo punto ciego que ya tiene `confirmarChecklist()` al
+  reemplazar bloques, no se resuelve aquí.
+- **Checklist editable en el sitio** — `ConstructorChecklist.tsx` gana un prop opcional `inicial` que,
+  si está presente, siembra todo el formulario (identidad, columnas de fecha, bloques e ítems) desde un
+  checklist ya guardado en vez de arrancar vacío; `rag/[formato]/page.tsx` lo renderiza arriba de la
+  vista previa de impresión, misma composición sin pestañas ni asistente que ya usa `/sistemas/[clave]`
+  (editor + vista previa, todo visible a la vez — D-21). La `clave` se bloquea al editar (mismo
+  principio que `FormatoEditor.tsx`, "nunca edita clave") porque `confirmarChecklist()` hace
+  upsert-por-clave + reemplazo completo: una clave distinta crearía una fila nueva y dejaría huérfana la
+  que se está editando — el bloqueo aplica tanto al campo del formulario manual como a un JSON
+  reimportado mientras se edita (se sobreescribe la clave del archivo con la del formato que se está
+  editando, silenciosamente, antes de previsualizar).
+- **Crear un RAG mensual desde `/rag`** — `ConstructorFormatoRag.tsx` (nuevo) es un formulario de
+  identidad como el de `FormatoEditor.tsx` más un selector de `sistema_id` limitado a sistemas activos
+  que todavía no tengan un RAG activo asociado (la app no impone esa restricción por esquema, sólo por
+  código — un formato futuro con otra necesidad podría relajarla). Crear un sistema nuevo sigue siendo
+  Configuración → Sistemas, fuera de alcance aquí. Sin `PanelVistaPrevia`: una alta de una sola fila no
+  tiene nada que resumir — mismo criterio que `crearSistema()`/`crearZona()`/`crearElemento()`, ninguno
+  usa vista previa.
+- **"Ver e imprimir" gana sub-pestañas** ("Sistemas mensuales" / "Checklists") en vez de una sola lista
+  con encabezados — pedido explícito del usuario. "Construir tipo nuevo" gana un selector de tipo (RAG
+  mensual / Checklist) por el mismo motivo que ahora hay dos formularios de alta distintos.
+- **`sistemas/[clave]/page.tsx` necesitó una corrección real, no sólo cosmética**: con `activo` pudiendo
+  haber dos filas de `formatos` para el mismo sistema (una activa, una de baja), el `.find()` original
+  podía devolver cualquiera de las dos según el orden de `clave`. Ahora prefiere explícitamente la
+  activa y sólo cae a una inactiva si no hay ninguna activa —para poder reactivarla desde ahí—, con un
+  aviso visible cuando el formato mostrado está de baja.
+
+**Verificación.** `tsc --noEmit` y `eslint --max-warnings=0` limpios; `verificar-rag.ts` y
+`verificar-checklist.ts` sin cambios de comportamiento (ninguno de los dos toca la base ni pasa por
+`activo`/`columnas_fecha`, sólo por los tipos puros). Verificado en vivo contra el proyecto remoto con
+datos sintéticos desechables (un sistema y sus formatos de prueba, borrados al terminar) y, para el modo
+edición, releyendo el checklist real de la ambulancia A-01 sin guardar cambios:
+
+- **Alta de RAG mensual**: creado desde `/rag → Construir tipo nuevo → RAG mensual` para un sistema de
+  prueba sin formato — redirigió a `/sistemas/{clave}` con `PlantillaEditor`/`ElementosCatalogo` y el
+  documento RAG en blanco, todo sin tocar los 6 formatos reales.
+- **Edición de checklist existente**: `/rag/RAG-4.1` (el checklist real de la ambulancia, 141 ítems)
+  abrió con `ConstructorChecklist` prellenado — identidad, 4 bloques, fotos de referencia con URL firmada
+  incluidas — y la `Clave` deshabilitada; no se confirmó ningún cambio, sólo se verificó la carga
+  completa y correcta de datos reales.
+- **`columnas_fecha` configurable**: un checklist de prueba con `columnas_fecha=5` imprimió exactamente 5
+  columnas de fecha (`document.querySelectorAll('.chk-celda-marca').length === 20` = 5 columnas × 4 filas
+  que las repiten — encabezado, Fecha, Grupo, un renglón de ítem), contra las 31 por defecto de antes.
+- **Baja/reactivación**: confirmado por la vía directa (la vía de UI depende de `window.confirm()`, que
+  el entorno de automatización no puede aceptar) — un formato de cada tipo desaparece de la lista por
+  defecto y reaparece con "Mostrar de baja"; `/sistemas/[clave]` de un RAG dado de baja muestra el aviso
+  correspondiente y sigue permitiendo editar `FormatoEditor`.
+- **Borrado permanente**: confirmado por la UI real en ambos tipos — "Eliminar permanentemente" sólo
+  aparece dado de baja; clave incorrecta deja el botón deshabilitado; clave correcta borra la fila
+  (confirmado por log de servidor: `eliminarFormatoPermanente(id, clave)`) y, para el checklist de
+  prueba, sin dejar `checklist_bloques`/`checklist_items` huérfanos (cascada). Tras borrar el RAG de
+  prueba, `/sistemas/{clave}` siguió cargando con el aviso "sin formato" — `elementos`/`plantillas` de
+  ese sistema (vacíos, por ser de prueba) quedaron intactos, confirmando que el análisis de FK se
+  sostiene. Estado final del proyecto: 7 formatos, todos activos (los 6 RAG mensuales + RAG 4.1), sin
+  rastro de datos de prueba.
+
+## D-24 · `numero` autocalculado reemplaza `pos`; banners y firma se repiten en cada página; portada con el mismo encabezado/pie
+
+**Estado:** vigente
+
+**Contexto.** Revisando `A01.pdf` (el checklist real de la ambulancia, RAG 4.1, 15 páginas) el usuario
+encontró tres problemas de fondo, no cosméticos:
+
+1. **"Pos." es un campo tecleado a mano**, heredado de transcribir el PDF de origen, y puede repetirse
+   sin que nada lo impida — el checklist real ya trae duplicados intencionales de la transcripción
+   ("63" aparece 6 veces, "74" dos). Aceptable como transcripción literal de un papel viejo, pero sin
+   ninguna razón para pedirle al usuario que teclee (y arriesgue chocar) un número en un checklist que
+   se arma desde cero.
+2. **El banner de una sección no se repetía al cruzar una página**: "Consumibles médicos" ocupaba las
+   páginas 2-6 completas de `A01.pdf`, pero el banner verde sólo aparecía en la página 2 — las
+   continuaciones no decían a qué categoría pertenecían sus renglones. Mismo problema en RAG con el
+   banner de zona.
+3. **La portada de fotos de un checklist no llevaba el mismo encabezado/pie que el resto de las
+   secciones** — sin "Generado…", sin AÑO/MES, sin Fecha/Grupo/Nombre/Firma.
+
+**Decisión — Parte 1, `numero` reemplaza `pos`:**
+
+- `ItemChecklist.pos: string | null` (tecleado) se reemplaza por `ItemChecklist.numero: number`
+  (calculado). Mismo patrón que `RenglonRAG.id` (`web/lib/rag/documento.ts`), que ya resolvía este
+  problema para los 5 RAG mensuales — el checklist simplemente no lo tenía. `agruparItems()`
+  (`web/lib/checklist/documento.ts`) numera con un contador cerrado, **por bloque** (no global al
+  documento, no reiniciado por categoría): "Equipo" numera de corrido 1..129 a través de sus categorías,
+  "Mecánico" numera 1..24 aparte — igual que ya distinguía el PDF de origen.
+- Aplica **retroactivamente a todos los checklists**, incluidos los ya importados — decisión explícita
+  del usuario, confirmada al preguntar: el checklist real de la ambulancia pasa de imprimir "78, 86,
+  88…" a "1, 2, 3…" la próxima vez que se genere, sin que nadie edite nada. No hay una versión "sólo
+  para checklists nuevos" que preserve el campo viejo — sería mantener dos convenciones de numeración a
+  la vez sin ninguna ventaja real.
+- La columna se sigue llamando `"#"` (antes "Pos.") — mismo rótulo que ya usa RAG, para que ambos
+  documentos hablen el mismo lenguaje visual. `checklist_items.pos` en la base y
+  `ItemChecklistImportado.pos?` en `actions.ts` se conservan sin cambio (un JSON puede seguir trayendo
+  `pos` por trazabilidad histórica de archivo) — simplemente ya nada lo lee para imprimir, y
+  `ConstructorChecklist.tsx` deja de pedirlo en el formulario.
+
+**Decisión — Parte 2, banners y firma repitiéndose en cada página:**
+
+La causa raíz era la misma en los dos motores: el banner vivía como un `<tr>` cualquiera dentro de
+`<tbody>`, y los navegadores sólo repiten nativamente `<thead>`/`<tfoot>` al paginar una tabla (D-16) —
+nunca un renglón de en medio. La única forma de que un banner se repita de verdad, sin JS ni PDF de
+servidor, es que viva en el `<thead>` de su propia tabla — lo que exige partir la tabla continua de hoy
+en **una tabla por unidad repetible**: una por zona en RAG (`renderizarCuerpoRAG()`,
+`web/lib/rag/render.ts`), una por "hoja" (categoría/ubicación física aplanada por la nueva
+`hojasDeGrupos()`) dentro de cada bloque en checklist (`renderizarBloqueTabla()`,
+`web/lib/checklist/render.ts`). El banner se mueve del `tbody` al `thead` de su tabla, sin cambiar su
+HTML/CSS; el cierre (Nombre/Firma en checklist, Realizó/Coordinador en RAG) queda en el `tfoot`, como ya
+estaba.
+
+**La duda que se planteó y se resolvió con evidencia real, no con teoría.** Al diseñar esto se
+consideró forzar un salto de página entre cada sección nueva, por seguridad — D-16 exige "cada hoja se
+firma por separado", y partir en más tablas sin forzar saltos parecía arriesgar una página compartida
+por dos secciones sin firma en medio. El usuario corrigió esta cautela con el propio `A01.pdf` como
+evidencia: **hoy, sin ningún salto forzado entre categorías**, la firma ya aparece en cada página — la
+transición "Consumibles médicos" → "Equipo médico" ocurre a media página 7 sin salto, y aun así ambas
+mitades muestran su propio bloque de firma. La razón: `tfoot` se repite en cada fragmento de
+**cualquier** tabla que toque una página, sin que importe si esa página se comparte con otra tabla.
+Partir en más tablas no cambia esa garantía — cada tabla nueva sigue mostrando su propio `tfoot` en cada
+página que toque. Conclusión adoptada: **no se fuerza ningún salto de página nuevo** entre zonas (RAG) ni
+entre hojas de una misma rebanada de fecha (checklist) — se sigue empacando libremente, igual que ya
+hacía el resto del documento; sólo se agrega la repetición del banner.
+
+Esto se **verificó empíricamente**, no sólo se razonó: se generó el HTML real de dos documentos con
+datos reales de Supabase (RAG 4.1, el checklist de la ambulancia, 157 ítems; RAG 2.3, hidrantes
+interiores, 74 elementos en 2 zonas) con un script desechable que reusa `armarDocumentoChecklist`/
+`armarDocumentoRAG` + `renderizarDocumentoCompleto` sobre datos reales, impreso a PDF con
+`msedge --headless --disable-gpu --print-to-pdf` (con `--user-data-dir` propio — sin él, Edge reusa la
+ventana ya abierta del usuario y el proceso headless no llega a imprimir nada) y renderizado a imágenes
+con `pdftoppm` para inspección visual página por página. Confirmado en ambos documentos: el banner de
+"Consumibles médicos"/"Nave 01" se repite correctamente en cada página de continuación (incluida la
+transición tabla-a-tabla dentro de una página compartida, y el cruce real página-a-página de una misma
+tabla); la firma/cierre aparece en cada página sin excepción; los saltos forzados siguen ocurriendo sólo
+donde deben (frontera de bloque en checklist: "Equipo" 1-129 → salto → "Mecánico" 1-24 reinicia el
+contador → salto → "Bitácora"); ningún caso de `thead` huérfano en las 16 + 3 páginas inspeccionadas.
+
+**Efecto secundario aceptado, no un defecto:** cuando dos tablas de sección comparten una misma página
+física (p. ej. "Consumibles médicos" termina y "Equipo médico" empieza a media página 7 de `A01.pdf`),
+cada una imprime su propio encabezado general completo (franja VW, título, "Generado…", AÑO/MES,
+Fecha/Grupo) — no sólo su banner de sección — porque cada `<table>` necesita su propio `<thead>`
+completo por semántica de HTML; no hay forma de saber en el HTML generado qué tabla va a empezar una
+página nueva en tiempo de impresión (eso lo decide el navegador, no el servidor — D-16), así que no se
+puede suprimir condicionalmente el encabezado "sólo si esta tabla cae a media página". Es el mismo costo,
+a escala más fina, que ya existía antes de este cambio entre una rebanada de fecha y la siguiente. Se
+acepta como parte del mismo trade-off que hace posible la garantía que pidió el usuario.
+
+**Decisión — Parte 3, la portada del checklist gana el mismo encabezado y pie:**
+
+`renderizarPortada()` (`web/lib/checklist/render.ts`) pasa de un `<div>` suelto (sin fecha, sin firma) a
+una tabla más — `<table class="doc-tabla chk-tabla chk-portada">`, siempre la primera del documento —
+con la misma estructura de tres piezas que el resto: `<thead>` = encabezado general (con instrucciones,
+por ser el primer bloque) + fila de Fecha + fila de Grupo; `<tbody>` = una sola fila con la cuadrícula de
+fotos, ahora de **2×2** (antes 4 en una fila, a pedido explícito del usuario); `<tfoot>` = fila de Nombre
++ fila de Firma + franja-pie. Pedido explícito del usuario: **todo cabe en una sola hoja**, con una
+columna de fecha por cada día configurado en `columnas_fecha` (hasta 31) — se logra con un ancho de
+columna de fecha propio de la portada (`ANCHO_COLUMNA_FECHA_PORTADA_MM = 7.5`, más angosto que el
+`ANCHO_COLUMNA_FECHA_MM` que usa el resto del documento) y una columna de etiqueta más ancha
+(`ANCHO_ETIQUETA_PORTADA_MM = 14`, para que "Nombre"/"Firma" no partan en dos líneas), usando
+`doc.columnasFecha` sin rebanar — la portada nunca necesita `rebanarColumnasFecha()` porque, a
+diferencia de Equipo/Mecánico, no carga columnas fijas de ítem que compitan por el ancho disponible.
+Verificado con capturas reales para 31 días (el caso límite) y 0 (formato sin columnas de fecha).
+
+**CSS — evitar que la tabla partida se vea como cajas sueltas.** `.chk-tabla`/`.rag-tabla` llevaban borde
+completo y margen pensados para una tabla por documento/rebanada; con varias tablas chicas pudiendo
+compartir página, eso se veía como cajas separadas con huecos. Se fusiona el borde entre dos tablas
+consecutivas que **no** tengan salto forzado entre sí, con `:has()`:
+`.chk-tabla:has(+ .chk-tabla:not(.chk-salto-pagina))` / `.rag-tabla:has(+ .rag-tabla)` — soportado en
+Chrome/Edge desde v105, aceptable porque la app ya sólo se dirige a esos motores (D-16). Se aprovechó el
+mismo cambio para quitar `break-inside: avoid` de `.chk-categoria`/`.chk-subgrupo`/`.rag-seccion` — CSS
+muerto desde que esas filas viven en un `<thead>`, que ya se mueve como unidad atómica al paginar.
+
+**Verificación.** `tsc --noEmit` y `eslint --max-warnings=0` limpios. `verificar-checklist.ts` y
+`verificar-rag.ts` reescritos para iterar **todas** las tablas de un documento (antes asumían una sola
+por documento/bloque) — colgroup/th/colspan por tabla, a lo más un banner externo y uno interno por
+tabla, y una suma de columnas de fecha que dedupe rebanadas consecutivas iguales (una hoja nueva no
+duplica la cuenta de su rebanada) — sin fallas en los casos de 31/28/0 días ni en los 4 casos de RAG.
+Impresión real con headless Edge contra datos reales de Supabase (ver Parte 2) para RAG 4.1 y RAG 2.3,
+inspeccionada página por página — éste es el único paso de los cuatro que ningún script puede cubrir,
+porque ambos trabajan sobre HTML estático, donde no existen páginas.
+
+**Archivos:** `web/lib/checklist/tipos.ts`, `documento.ts`, `columnas.ts`, `render.ts`, `estilos.ts`;
+`web/lib/rag/render.ts`, `estilos.ts`; `web/app/(app)/rag/ConstructorChecklist.tsx`;
+`web/scripts/verificar-checklist.ts`, `verificar-rag.ts`.

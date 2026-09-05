@@ -233,6 +233,8 @@ así no hay manera de que un formato del mismo tipo lo traiga distinto a los dem
 | `instrucciones` | jsonb | no | Sólo las instrucciones **propias** de este formato (p. ej. "P = Pie, G = Gabinete" en RAG 2.2). La instrucción general no se repite aquí — se concatena al generar. Ver §3.4 |
 | `notas` | text | sí | Discrepancias del documento de origen frente al proceso real, señaladas sin resolver — mismo criterio que `elementos.notas` |
 | `columnas` | jsonb | no | `{ubicacion, referencia}` — qué columnas opcionales lleva un documento `'rag'`. Sin significado para `'checklist'`. Ver docs/decisiones.md D-19 |
+| `activo` | boolean | no | Baja recuperable — default `true`. Mismo patrón que `elementos.activo`/`sistemas.activo`/`zonas.activo` (D-18). Ver docs/decisiones.md D-23 |
+| `columnas_fecha` | smallint | no | Cuántas columnas de fecha imprime un `'checklist'` — default `31`. Sin significado para `'rag'`. Antes se derivaba del ciclo abierto en tiempo de solicitud; ahora es explícito y propio de cada formato. Ver docs/decisiones.md D-23 |
 | `creado` | timestamptz | no | Alta del formato |
 | `actualizado` | timestamptz | no | Última modificación |
 
@@ -268,6 +270,7 @@ libres sin fechas. Ver docs/decisiones.md D-22.
 | `orden` | smallint | no | Orden de aparición dentro del documento |
 | `columnas` | jsonb | no | Sólo `bitacora_libre`: `[{id, etiqueta}]` de sus columnas fijas. Vacío en los demás tipos |
 | `filas_blanco` | smallint | sí | Sólo `bitacora_libre`: cuántas filas en blanco imprimir. Nulo en los demás tipos |
+| `agrupacion` | jsonb | no | Sólo `tabla_verificacion`/`tabla_simple`: arreglo de 0 a 2 elementos de `{"categoria","ubicacion_fisica"}` que decide cómo se anidan los banners de sección — `[]` = sin banners (plano), un elemento = un nivel, dos = anidado (el primero es el banner externo). Default `["ubicacion_fisica","categoria"]`. Vive en el bloque, no en el formato, porque cada bloque de un mismo checklist puede necesitar un orden distinto. Ver docs/decisiones.md D-22 |
 | `creado` | timestamptz | no | Alta del bloque |
 | `actualizado` | timestamptz | no | Última modificación |
 
@@ -280,8 +283,9 @@ verificaciones, o una "Descripción" del sub-checklist mecánico.
 |---|---|---|---|
 | `id` | uuid | no | Llave primaria |
 | `bloque_id` | uuid | no | Referencia a `checklist_bloques`, `on delete cascade` |
-| `categoria` | text | sí | Agrupador visual dentro del bloque (p. ej. `EQUIPO MEDICO`), texto libre — **no** referencia a `zonas`: las categorías de un checklist son propias de ese checklist, no necesitan el catálogo compartido de planta (ver docs/decisiones.md D-22) |
-| `pos` | text | sí | Rótulo tal cual el documento de origen. Puede repetirse — el PDF de la ambulancia trae Pos duplicados reales (`63` se repite 6 veces); no es una clave, sólo se imprime |
+| `categoria` | text | sí | Primera dimensión de agrupación (p. ej. `EQUIPO MEDICO`), texto libre — **no** referencia a `zonas`: las categorías de un checklist son propias de ese checklist, no necesitan el catálogo compartido de planta (ver docs/decisiones.md D-22) |
+| `ubicacion_fisica` | text | sí | Segunda dimensión de agrupación, independiente de `categoria` (p. ej. `Cabina`, `Compartimento trasero`) — responde al requisito de "identificar correctamente dónde encontrar los elementos". Cuál de las dos es el banner externo y cuál el interno lo decide `checklist_bloques.agrupacion`, no un orden fijo. Ver docs/decisiones.md D-22 |
+| `pos` | text | sí | Rótulo tal cual el documento de origen, conservado sólo por trazabilidad histórica del archivo importado — el PDF de la ambulancia trae Pos duplicados reales (`63` se repite 6 veces). **Ya no se imprime**: el documento generado numera cada ítem con un `#` correlativo 1..N calculado por bloque al armar el documento (`ItemChecklist.numero`, no una columna — ver `web/lib/checklist/documento.ts` y docs/decisiones.md D-24), igual que ya hacía `RenglonRAG.id` en RAG |
 | `nombre` | text | no | "Equipo" (bloques de tabla) o "Descripción" (sub-checklist mecánico) |
 | `cantidad` | text | sí | Texto libre, p. ej. `6`, `1 C/U`, `2 pares` — no siempre es un número entero simple |
 | `foto_referencia_ruta` | text | sí | Ruta en el depósito `evidencias`, prefijo `checklist-ref/` — mismo depósito que las fotos de campo, sin bucket nuevo |
@@ -290,9 +294,9 @@ verificaciones, o una "Descripción" del sub-checklist mecánico.
 | `notas` | text | sí | Ambigüedades del documento de origen sin resolver — mismo criterio que `elementos.notas`/`formatos.notas` |
 
 No hay tabla de "capturas" para un checklist: se imprime en blanco y punto, sin equivalente a
-`registros`/`valores`. Las columnas de fecha del documento tampoco se guardan — se derivan de los días
-del mes del ciclo abierto al generar (`new Date(anio, mes, 0).getDate()`, 31 de respaldo si no hay
-ciclo); las celdas quedan en blanco para llenarse a mano.
+`registros`/`valores` — las celdas de fecha quedan en blanco para llenarse a mano. Cuántas columnas de
+fecha imprime es explícito por formato (`formatos.columnas_fecha`, §2.8), no derivado del ciclo abierto
+— ver docs/decisiones.md D-23.
 
 ---
 
@@ -523,6 +527,67 @@ Sólo exportación — copia de respaldo de las dos tablas de catálogo comparti
 
 Ambas se editan desde la pantalla (**Configuración → Zonas** y **→ Sistemas**), altas incluidas — este
 JSON es sólo para tener una copia fuera de la base, no un formato de importación.
+
+#### 3.5.5 Checklist completo (identidad + bloques + ítems)
+
+Importación y exportación desde `web/app/(app)/rag/ConstructorChecklist.tsx` — tanto para crear uno
+nuevo (pestaña "Construir tipo nuevo" de `/rag`) como para editar uno ya guardado en el sitio
+(`/rag/[formato]`, ver docs/decisiones.md D-23), no desde el panel de Configuración: un checklist no
+tiene sistema ni ciclo, así que no encaja en el flujo mensual de catálogo/plantillas/formatos RAG que sí
+administra ese panel. Alimenta `formatos` (con `tipo_documento = 'checklist'`), `checklist_bloques` y
+`checklist_items` (§2.10-2.11).
+
+```jsonc
+{
+  "formato": {
+    "clave": "RAG 4.1",
+    "nombre": "Lista de inspección de ambulancia",
+    "periodicidad": "diario",
+    "documento_referencia": "I1.15M2_4037-004",
+    "revision": null,
+    "instrucciones": ["Marque el estado en la columna de la fecha en que se realiza la revisión."],
+    "notas": null,
+    "columnas_fecha": 31
+  },
+  "bloques": [
+    { "tipo": "portada_fotos", "nombre": "Identificación de la unidad", "orden": 1,
+      "items": [ { "nombre": "Frontal", "foto_referencia_ruta": "checklist-ref/rag-4.1/abc123.jpg" } ] },
+
+    { "tipo": "tabla_verificacion", "nombre": "Equipo", "orden": 2,
+      "agrupacion": ["ubicacion_fisica", "categoria"],
+      "items": [
+        { "categoria": "EQUIPO MEDICO", "ubicacion_fisica": "Compartimento trasero", "pos": "22", "orden": 15,
+          "nombre": "Camilla rígida", "cantidad": "1",
+          "verificaciones": [{ "id": "buen_estado", "etiqueta": "Buen estado" }],
+          "foto_referencia_ruta": "checklist-ref/rag-4.1/def456.jpg" } ] },
+
+    { "tipo": "tabla_simple", "nombre": "Mecánico", "orden": 3,
+      "items": [ { "pos": "1", "orden": 1, "nombre": "Nivel de aceite" } ] },
+
+    { "tipo": "bitacora_libre", "nombre": "Bitácora de insumos", "orden": 4,
+      "columnas": [{ "id": "insumo", "etiqueta": "Insumo utilizado o faltante" }, { "id": "cantidad", "etiqueta": "Cantidad" }],
+      "filas_blanco": 20 }
+  ]
+}
+```
+
+Campos opcionales de un ítem (`categoria`, `ubicacion_fisica`, `pos`, `cantidad`, `verificaciones`,
+`foto_referencia_ruta`, `orden`, `notas`) se guardan `null`/`[]`/consecutivo si se omiten; `agrupacion`
+se guarda `[]` si se omite (sin banners de sección — ver §2.10 y docs/decisiones.md D-22).
+`bloques[].items` no aplica a `bitacora_libre` (sólo trae `columnas`/`filas_blanco`); `bloques[].columnas`
+y `filas_blanco` no aplican a los demás tipos. `formato.columnas_fecha` es opcional (para no romper un
+JSON escrito antes de esta característica) — ausente se guarda como 31 (`DIAS_POR_DEFECTO`). Ver
+docs/decisiones.md D-23.
+
+La conciliación es por `formato.clave`, igual que §3.5.3, pero **sin diff incremental**: cada import
+hace `upsert` del renglón `formatos` y luego reemplaza POR COMPLETO los `checklist_bloques` de esa
+clave (el `on delete cascade` de la migración 0008 se lleva los `checklist_items` con ellos) antes de
+insertar los del archivo — nunca intenta calzar un ítem viejo contra uno nuevo por identidad. Ver
+docs/decisiones.md D-22 (sección "Revisión — constructor de checklist e importación JSON").
+
+La foto de referencia de un ítem (`foto_referencia_ruta`) se sube por separado, directo desde el
+navegador al depósito `evidencias` con prefijo `checklist-ref/{clave}/` (mismo mecanismo que D-06), antes
+de armar este JSON — el importador nunca sube archivos, sólo guarda la ruta ya subida.
 
 ### 3.6 El orden de recorrido
 

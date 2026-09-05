@@ -1,16 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { Aviso } from "@/components/Aviso";
-import { claveASlug } from "@/lib/rag/documento";
 import type { Formato, Sistema } from "@/lib/tipos";
+import { ConstructorChecklist } from "./ConstructorChecklist";
+import { ConstructorFormatoRag } from "./ConstructorFormatoRag";
+import { FormatosLista } from "./FormatosLista";
 
 type Pestana = "ver" | "construir";
+type SubPestanaVer = "mensuales" | "checklists";
+type TipoAConstruir = "checklist" | "rag_mensual";
 
 const PESTANAS: { id: Pestana; etiqueta: string }[] = [
   { id: "ver", etiqueta: "Ver e imprimir" },
   { id: "construir", etiqueta: "Construir tipo nuevo" },
+];
+
+const SUB_PESTANAS_VER: { id: SubPestanaVer; etiqueta: string }[] = [
+  { id: "mensuales", etiqueta: "Sistemas mensuales" },
+  { id: "checklists", etiqueta: "Checklists" },
+];
+
+const TIPOS_A_CONSTRUIR: { id: TipoAConstruir; etiqueta: string }[] = [
+  { id: "rag_mensual", etiqueta: "RAG mensual" },
+  { id: "checklist", etiqueta: "Checklist" },
 ];
 
 interface Props {
@@ -22,14 +34,18 @@ interface Props {
  * Pestaña independiente para RAG y checklist — antes /rag redirigía a
  * /configuracion porque D-21 asumió que todo formato cuelga de un
  * sistema. Un checklist con sistema_id null rompe esa premisa: necesita
- * pantalla propia, y el usuario pidió explícitamente que ver/imprimir y
- * construir tipos nuevos vivan en el mismo lugar (ver docs/decisiones.md
- * D-22). Un RAG mensual sigue enlazando a /sistemas/[clave] — D-21 sigue
- * vigente para ese caso, no se deshace.
+ * pantalla propia (ver docs/decisiones.md D-22). "Ver e imprimir" separa
+ * sistemas mensuales de checklists en sub-pestañas propias (no una sola
+ * lista con encabezados) y "Construir tipo nuevo" ahora puede dar de alta
+ * cualquiera de los dos tipos — antes sólo checklist (ver D-23).
  */
 export function RagHub({ formatos, sistemas }: Props) {
   const [pestana, setPestana] = useState<Pestana>("ver");
-  const sistemaPorId = new Map(sistemas.map((s) => [s.id, s]));
+  const [subPestanaVer, setSubPestanaVer] = useState<SubPestanaVer>("mensuales");
+  const [tipoAConstruir, setTipoAConstruir] = useState<TipoAConstruir>("checklist");
+
+  const formatosRag = formatos.filter((f) => f.tipo_documento === "rag");
+  const formatosChecklist = formatos.filter((f) => f.tipo_documento === "checklist");
 
   return (
     <div>
@@ -55,36 +71,57 @@ export function RagHub({ formatos, sistemas }: Props) {
 
       <div className="mt-6">
         {pestana === "ver" && (
-          <ul className="divide-y divide-vw-dsb-10 border-y border-vw-dsb-10">
-            {formatos.map((f) => {
-              const sistema = f.sistema_id ? sistemaPorId.get(f.sistema_id) : null;
-              const href = sistema ? `/sistemas/${sistema.clave}` : `/rag/${claveASlug(f.clave)}`;
-              return (
-                <li key={f.id}>
-                  <Link href={href} className="flex items-center justify-between gap-3 px-1 py-3 hover:bg-vw-vg-10">
-                    <div>
-                      <p className="font-medium text-vw-deep-space">
-                        {f.clave} <span className="text-sm font-normal text-vw-dsb-60">· {f.nombre}</span>
-                      </p>
-                      <p className="text-sm text-vw-dsb-60">
-                        {f.tipo_documento === "checklist" ? "Checklist" : "RAG"} · {f.periodicidad}
-                        {sistema && ` · ${sistema.nombre}`}
-                      </p>
-                    </div>
-                    <span className="shrink-0 text-sm text-vw-vivid-green">Ver →</span>
-                  </Link>
-                </li>
-              );
-            })}
-            {formatos.length === 0 && <li className="py-3 text-sm text-vw-dsb-60">No hay formatos todavía.</li>}
-          </ul>
+          <div>
+            <div className="flex flex-wrap gap-1 border-b border-vw-dsb-10">
+              {SUB_PESTANAS_VER.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setSubPestanaVer(p.id)}
+                  className={`border-b-2 px-2.5 py-1.5 text-sm transition ${
+                    subPestanaVer === p.id
+                      ? "border-vw-vivid-green font-medium text-vw-deep-space"
+                      : "border-transparent text-vw-dsb-60 hover:text-vw-deep-space"
+                  }`}
+                >
+                  {p.etiqueta}
+                </button>
+              ))}
+            </div>
+            <div className="mt-4">
+              {subPestanaVer === "mensuales" && (
+                <FormatosLista formatosIniciales={formatosRag} sistemas={sistemas} tipo="rag" />
+              )}
+              {subPestanaVer === "checklists" && (
+                <FormatosLista formatosIniciales={formatosChecklist} sistemas={sistemas} tipo="checklist" />
+              )}
+            </div>
+          </div>
         )}
 
         {pestana === "construir" && (
-          <Aviso tipo="ambar">
-            El constructor de checklist (definir bloques e ítems sin tocar código, o importar el JSON de un
-            checklist ya extraído) llega en la Etapa 3 del plan de ampliación de RAGs.
-          </Aviso>
+          <div>
+            <div className="flex flex-wrap gap-2">
+              {TIPOS_A_CONSTRUIR.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTipoAConstruir(t.id)}
+                  className={`border px-3 py-1.5 text-sm transition ${
+                    tipoAConstruir === t.id
+                      ? "border-vw-vivid-green font-medium text-vw-deep-space"
+                      : "border-vw-dsb-20 text-vw-dsb-60 hover:border-vw-vivid-green hover:text-vw-deep-space"
+                  }`}
+                >
+                  {t.etiqueta}
+                </button>
+              ))}
+            </div>
+            <div className="mt-6">
+              {tipoAConstruir === "rag_mensual" && <ConstructorFormatoRag sistemas={sistemas} formatos={formatos} />}
+              {tipoAConstruir === "checklist" && <ConstructorChecklist />}
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -4,9 +4,11 @@ import { obtenerChecklistCompleto, obtenerCicloAbierto, obtenerFormatoPorClave, 
 import { armarDocumentoChecklist, type BloqueChecklistCrudo } from "@/lib/checklist/documento";
 import { renderizarCuerpoChecklist, renderizarDocumentoCompleto } from "@/lib/checklist/render";
 import { ESTILOS_CHECKLIST } from "@/lib/checklist/estilos";
-import { DIAS_POR_DEFECTO } from "@/lib/checklist/constantes";
 import { slugAClave } from "@/lib/rag/documento";
 import { VisorDocumento } from "@/components/VisorDocumento";
+import { Aviso } from "@/components/Aviso";
+import { ConstructorChecklist } from "../ConstructorChecklist";
+import type { ChecklistImportado } from "../actions";
 
 /**
  * Antes esta ruta sólo resolvía formato → sistema y redirigía a
@@ -41,9 +43,11 @@ export default async function RagFormatoPage({ params }: { params: Promise<{ for
     orden: b.orden,
     columnas: b.columnas,
     filasBlanco: b.filas_blanco,
+    agrupacion: b.agrupacion,
     items: b.items.map((i) => ({
       id: i.id,
       categoria: i.categoria,
+      ubicacionFisica: i.ubicacion_fisica,
       pos: i.pos,
       nombre: i.nombre,
       cantidad: i.cantidad,
@@ -53,7 +57,7 @@ export default async function RagFormatoPage({ params }: { params: Promise<{ for
     })),
   }));
 
-  const diasDelMes = ciclo ? new Date(ciclo.anio, ciclo.mes, 0).getDate() : DIAS_POR_DEFECTO;
+  const diasDelMes = formato.columnas_fecha;
 
   const documento = armarDocumentoChecklist({
     formato: {
@@ -73,6 +77,41 @@ export default async function RagFormatoPage({ params }: { params: Promise<{ for
   const htmlCuerpo = renderizarCuerpoChecklist(documento);
   const htmlCompleto = renderizarDocumentoCompleto(documento);
 
+  // Inverso de bloquesCrudo de arriba (misma fuente, otra forma): lo que
+  // ConstructorChecklist.tsx necesita para arrancar prellenado en modo
+  // edición en vez de vacío — ver docs/decisiones.md D-23.
+  const datosInicial: ChecklistImportado = {
+    formato: {
+      clave: formato.clave,
+      nombre: formato.nombre,
+      periodicidad: formato.periodicidad,
+      documento_referencia: formato.documento_referencia,
+      revision: formato.revision,
+      instrucciones: formato.instrucciones,
+      notas: formato.notas,
+      columnas_fecha: formato.columnas_fecha,
+    },
+    bloques: bloques.map((b) => ({
+      tipo: b.tipo,
+      nombre: b.nombre,
+      orden: b.orden,
+      agrupacion: b.agrupacion,
+      columnas: b.columnas,
+      filas_blanco: b.filas_blanco,
+      items: b.items.map((i) => ({
+        categoria: i.categoria,
+        ubicacion_fisica: i.ubicacion_fisica,
+        pos: i.pos,
+        nombre: i.nombre,
+        cantidad: i.cantidad,
+        verificaciones: i.verificaciones,
+        foto_referencia_ruta: i.foto_referencia_ruta,
+        orden: i.orden,
+        notas: i.notas,
+      })),
+    })),
+  };
+
   return (
     <div>
       <div className="mb-2 flex items-baseline justify-between">
@@ -80,8 +119,18 @@ export default async function RagFormatoPage({ params }: { params: Promise<{ for
       </div>
       <p className="mb-6 text-sm text-vw-dsb-60">{formato.nombre}</p>
 
-      <style dangerouslySetInnerHTML={{ __html: ESTILOS_CHECKLIST }} />
-      <VisorDocumento html={htmlCuerpo} htmlCompleto={htmlCompleto} soloVacio volverHref="/rag" />
+      {!formato.activo && (
+        <div className="mb-6">
+          <Aviso tipo="ambar">Este formato está dado de baja.</Aviso>
+        </div>
+      )}
+
+      <ConstructorChecklist inicial={{ formatoId: formato.id, datos: datosInicial }} />
+
+      <div className="mt-10">
+        <style dangerouslySetInnerHTML={{ __html: ESTILOS_CHECKLIST }} />
+        <VisorDocumento html={htmlCuerpo} htmlCompleto={htmlCompleto} soloVacio volverHref="/rag" />
+      </div>
     </div>
   );
 }

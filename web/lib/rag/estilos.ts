@@ -38,6 +38,17 @@ export const ESTILOS_RAG = /* css */ `
     table-layout: fixed;
     border: 1.5pt solid var(--vw-deep-space);
   }
+  /* Una tabla por zona, no una para todo el documento (ver
+     docs/decisiones.md D-24) — sin este ajuste, dos zonas que comparten
+     una misma página impresa (no hay salto forzado entre ellas) se
+     verían como dos cajas con un borde doble en medio en vez de una
+     tabla continua. */
+  .rag-tabla + .rag-tabla {
+    border-top: none;
+  }
+  .rag-tabla:has(+ .rag-tabla) {
+    border-bottom: none;
+  }
 
   .rag-tabla th,
   .rag-tabla td {
@@ -235,9 +246,8 @@ export const ESTILOS_RAG = /* css */ `
     border-top: 1.5pt solid var(--vw-deep-space);
     border-bottom: 1.5pt solid var(--vw-deep-space);
   }
-  .rag-seccion {
-    break-inside: avoid;
-  }
+  /* Sin break-inside:avoid a propósito — ahora vive en <thead> (una tabla
+     por zona, ver D-24), que ya se mueve como unidad atómica al paginar. */
 
   .rag-renglon {
     break-inside: avoid;

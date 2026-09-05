@@ -121,20 +121,68 @@ function renderizarFilaCierrePie(cierre: CierreFormato, totalCols: number): stri
     </tr>`;
 }
 
+/** Franja-superior + título + instrucciones — el mismo contenido que
+ * antes vivía inline dentro de renderizarCuerpoRAG(), extraído para
+ * poder llamarlo una vez por zona (ver renderizarCuerpoRAG): las
+ * instrucciones sólo se muestran en la PRIMERA tabla del documento,
+ * mismo criterio que ya usaba checklist (renderizarEncabezadoGeneral en
+ * web/lib/checklist/render.ts) — ver docs/decisiones.md D-24. */
+function renderizarEncabezadoGeneralRAG(doc: DocumentoRAG, totalCols: number, conInstrucciones: boolean): string {
+  const metaCiclo = doc.cicloNombre ? `${escapeHtml(doc.cicloNombre)} · ` : "";
+  const metaModo = doc.modo === "vacio" ? "Formato en blanco" : "Con lo capturado";
+  const instrucciones =
+    conInstrucciones && doc.instrucciones.length > 0
+      ? `<tr class="rag-instrucciones-fila"><td colspan="${totalCols}"><ol class="rag-instrucciones">${doc.instrucciones.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ol></td></tr>`
+      : "";
+
+  return `
+    <tr class="rag-franja-superior">
+      <td colspan="${totalCols}">
+        <div class="rag-encabezado-linea">
+          ${doc.encabezado.clasificacion ? `<span class="rag-clasificacion">${escapeHtml(doc.encabezado.clasificacion)}</span>` : "<span></span>"}
+          <span class="rag-logo">${LOGO_VW_SVG}</span>
+          <span></span>
+        </div>
+      </td>
+    </tr>
+    <tr class="rag-titulo-fila">
+      <td colspan="${totalCols}">
+        <div class="rag-titulo">${escapeHtml(doc.nombre)}</div>
+        <div class="rag-meta">${metaCiclo}Generado ${formatearFecha(doc.generado)} · ${metaModo} · ${doc.totalRenglones} elemento${doc.totalRenglones === 1 ? "" : "s"}</div>
+      </td>
+    </tr>
+    ${instrucciones}`;
+}
+
+/** Una zona sin nombre (documento sin elementos, caso límite) — para que
+ * la tabla igual se imprima con encabezado/pie y sin ningún renglón, sin
+ * ampliar SeccionRAG a nullable (ver docs/decisiones.md D-24): el tipo
+ * público sigue siendo honesto, esta forma sólo existe dentro de esta
+ * función. */
+interface SeccionParaImprimir {
+  nombre: string | null;
+  renglones: RenglonRAG[];
+}
+
 /**
  * El cuerpo semántico del documento — sin `<style>`, sin `<html>`. Para
  * incrustarse dentro de una página que ya controla su propio `<head>`
  * (la vista de la app inyecta ESTILOS_RAG aparte, una sola vez).
  *
- * Todo el encabezado —clasificación, logo, título, instrucciones y
- * encabezados de columna— vive dentro de `<thead>`, y el pie corporativo
- * más el bloque de cierre dentro de `<tfoot>`, de la MISMA tabla que trae
- * los renglones. No se "programa" que se repitan: los navegadores repiten
- * thead/tfoot de forma nativa en cada página al paginar (ver
- * docs/decisiones.md D-16) — en pantalla, por no haber paginación, se ven
- * una sola vez, arriba y abajo de la tabla, tal como se pidió. El bloque
- * de firmas se repite con el pie sólo si `cierre.repetir` es verdadero;
- * si no, se imprime una vez al final, fuera de la tabla.
+ * Una `<table>` POR ZONA, no una sola para todo el documento: antes el
+ * banner de zona (`rag-seccion`) era un `<tr>` cualquiera dentro de
+ * `<tbody>`, así que si una zona con muchos renglones se repartía entre
+ * varias páginas impresas, el banner sólo aparecía en la primera — los
+ * navegadores sólo repiten nativamente `<thead>`/`<tfoot>` al paginar, no
+ * un renglón de en medio (ver docs/decisiones.md D-16 y D-24). Ahora el
+ * banner vive dentro del `<thead>` de la tabla de SU zona, así que se
+ * repite igual que el resto del encabezado en cualquier página que esa
+ * zona llegue a ocupar. Sin salto de página forzado entre zonas — cada
+ * tabla sigue mostrando su propio `<tfoot>` en cualquier página que
+ * toque, así que ninguna página se queda sin firma aunque comparta
+ * página con la zona siguiente (verificado contra el PDF real de la
+ * ambulancia, ver D-24). `columnasDe(doc)` no varía por zona, así que el
+ * `colgroup` es idéntico en cada tabla, sólo repetido.
  */
 export function renderizarCuerpoRAG(doc: DocumentoRAG): string {
   const columnas = columnasDe(doc);
@@ -158,64 +206,49 @@ export function renderizarCuerpoRAG(doc: DocumentoRAG): string {
     )
     .join("");
 
-  const filasSeccion = doc.secciones
-    .map((seccion) => {
-      const encabezado = `<tr class="rag-seccion"><th colspan="${totalCols}">${escapeHtml(seccion.nombre)}</th></tr>`;
+  const domicilio = doc.encabezado.domicilio.map(escapeHtml).join(", ");
+  const revision = doc.encabezado.revision ? ` Rev. ${escapeHtml(doc.encabezado.revision)}` : "";
+
+  const secciones: SeccionParaImprimir[] = doc.secciones.length > 0 ? doc.secciones : [{ nombre: null, renglones: [] }];
+
+  const tablas = secciones
+    .map((seccion, indice) => {
+      const primeraTabla = indice === 0;
+      const banner =
+        seccion.nombre !== null ? `<tr class="rag-seccion"><th colspan="${totalCols}">${escapeHtml(seccion.nombre)}</th></tr>` : "";
       const filas = seccion.renglones.map((r) => renderizarRenglon(r, columnas, puntosPorId, doc.modo)).join("");
-      return encabezado + filas;
+
+      return `
+<table class="rag-tabla">
+  <colgroup>
+    ${colgroup}
+  </colgroup>
+  <thead>
+    ${renderizarEncabezadoGeneralRAG(doc, totalCols, primeraTabla)}
+    ${banner}
+    <tr class="rag-encabezado-principal">
+      ${encabezados}
+    </tr>
+  </thead>
+  <tbody>
+    ${filas}
+  </tbody>
+  <tfoot>
+    ${doc.cierre.repetir ? renderizarFilaCierrePie(doc.cierre, totalCols) : ""}
+    <tr class="rag-franja-pie">
+      <td colspan="${totalCols}">
+        ${escapeHtml(doc.encabezado.razon_social)} — ${domicilio} · ${escapeHtml(doc.clave)}
+        ${escapeHtml(doc.encabezado.documento_referencia)}${revision}
+      </td>
+    </tr>
+  </tfoot>
+</table>`;
     })
     .join("");
 
-  const domicilio = doc.encabezado.domicilio.map(escapeHtml).join(", ");
-  const revision = doc.encabezado.revision ? ` Rev. ${escapeHtml(doc.encabezado.revision)}` : "";
-  const metaCiclo = doc.cicloNombre ? `${escapeHtml(doc.cicloNombre)} · ` : "";
-  const metaModo = doc.modo === "vacio" ? "Formato en blanco" : "Con lo capturado";
-
   return `
 <div class="rag-doc">
-  <table class="rag-tabla">
-    <colgroup>
-      ${colgroup}
-    </colgroup>
-    <thead>
-      <tr class="rag-franja-superior">
-        <td colspan="${totalCols}">
-          <div class="rag-encabezado-linea">
-            ${doc.encabezado.clasificacion ? `<span class="rag-clasificacion">${escapeHtml(doc.encabezado.clasificacion)}</span>` : "<span></span>"}
-            <span class="rag-logo">${LOGO_VW_SVG}</span>
-            <span></span>
-          </div>
-        </td>
-      </tr>
-      <tr class="rag-titulo-fila">
-        <td colspan="${totalCols}">
-          <div class="rag-titulo">${escapeHtml(doc.nombre)}</div>
-          <div class="rag-meta">${metaCiclo}Generado ${formatearFecha(doc.generado)} · ${metaModo} · ${doc.totalRenglones} elemento${doc.totalRenglones === 1 ? "" : "s"}</div>
-        </td>
-      </tr>
-      ${
-        doc.instrucciones.length > 0
-          ? `<tr class="rag-instrucciones-fila"><td colspan="${totalCols}"><ol class="rag-instrucciones">${doc.instrucciones.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ol></td></tr>`
-          : ""
-      }
-      <tr class="rag-encabezado-principal">
-        ${encabezados}
-      </tr>
-    </thead>
-    <tbody>
-      ${filasSeccion}
-    </tbody>
-    <tfoot>
-      ${doc.cierre.repetir ? renderizarFilaCierrePie(doc.cierre, totalCols) : ""}
-      <tr class="rag-franja-pie">
-        <td colspan="${totalCols}">
-          ${escapeHtml(doc.encabezado.razon_social)} — ${domicilio} · ${escapeHtml(doc.clave)}
-          ${escapeHtml(doc.encabezado.documento_referencia)}${revision}
-        </td>
-      </tr>
-    </tfoot>
-  </table>
-
+  ${tablas}
   ${!doc.cierre.repetir ? `<div class="rag-cierre-final">${renderizarBloqueCierre(doc.cierre)}</div>` : ""}
 </div>`;
 }

@@ -15,6 +15,19 @@ export const ESTILOS_CHECKLIST = /* css */ `
   .chk-tabla {
     margin-bottom: 6mm;
   }
+  /* Varias hojas de la misma rebanada de fecha ya no fuerzan un salto de
+     página entre sí (ver docs/decisiones.md D-24) — sin este ajuste se
+     verían como cajas separadas con huecos en vez de una tabla continua.
+     Sólo se fusionan los bordes entre dos tablas consecutivas que NO
+     tengan un salto forzado entre ellas (.chk-salto-pagina marca dónde sí
+     empieza una sección/rebanada nueva). */
+  .chk-tabla:has(+ .chk-tabla:not(.chk-salto-pagina)) {
+    margin-bottom: 0;
+    border-bottom: none;
+  }
+  .chk-tabla + .chk-tabla:not(.chk-salto-pagina) {
+    border-top: none;
+  }
 
   /* ------------------------------------------------ sección general */
 
@@ -47,6 +60,7 @@ export const ESTILOS_CHECKLIST = /* css */ `
     font-weight: 700;
     text-align: right;
     padding-right: 6pt;
+    white-space: nowrap;
   }
   .chk-fila-columna td {
     background: var(--vw-dsb-10);
@@ -109,9 +123,24 @@ export const ESTILOS_CHECKLIST = /* css */ `
     border-top: 1.5pt solid var(--vw-deep-space);
     border-bottom: 1.5pt solid var(--vw-deep-space);
   }
-  .chk-categoria {
-    break-inside: avoid;
+  /* Sin break-inside:avoid a propósito — ahora vive en <thead>, que ya
+     se mueve como unidad atómica al paginar (D-24), la regla no tenía
+     efecto adicional. */
+
+  /* Banner interno (2º nivel de agrupación, p. ej. categoría dentro de
+     ubicación física) — más claro que .chk-categoria a propósito, para
+     que se lea subordinado al externo sin competir con él. */
+  .chk-subgrupo th {
+    background: var(--vw-dsb-20);
+    color: var(--vw-deep-space);
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-align: left;
+    padding: 1.5pt 4pt 1.5pt 8pt;
+    border-bottom: 0.75pt solid var(--vw-deep-space);
   }
+  /* Ídem — ya vive en <thead>, ver nota junto a .chk-categoria arriba. */
+
   .chk-renglon {
     break-inside: avoid;
   }
@@ -130,22 +159,16 @@ export const ESTILOS_CHECKLIST = /* css */ `
 
   /* --------------------------------------------------------------- portada */
 
-  .chk-portada {
-    border: 1.5pt solid var(--vw-deep-space);
+  /* La portada ya es una <table class="doc-tabla chk-tabla chk-portada">
+     más (ver docs/decisiones.md D-24) — el borde y el margen los pone
+     .doc-tabla/.chk-tabla; aquí sólo el padding de la celda que envuelve
+     la cuadrícula de fotos. */
+  .chk-portada-celda-grid {
     padding: 4mm;
-    margin-bottom: 6mm;
-    break-inside: avoid;
-  }
-  .chk-portada-encabezado {
-    margin-bottom: 4mm;
-  }
-  .chk-portada-titulo {
-    text-align: center;
-    margin-bottom: 4mm;
   }
   .chk-portada-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 4mm;
   }
   .chk-portada-tarjeta {

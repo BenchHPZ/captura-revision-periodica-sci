@@ -43,7 +43,12 @@ export default async function SistemaPage({
   const [sistemas, formatos] = await Promise.all([obtenerSistemasCatalogo(supabase), obtenerFormatos(supabase)]);
   const sistema = sistemas.find((s) => s.clave === clave);
   if (!sistema) notFound();
-  const formato = formatos.find((f) => f.sistema_id === sistema.id) ?? null;
+  // Puede haber más de un formato para el mismo sistema (uno activo, uno
+  // dado de baja) — se prefiere el activo; sólo se cae al inactivo si no
+  // hay ninguno activo, para poder reactivarlo desde aquí. Ver
+  // docs/decisiones.md D-23.
+  const formatosDelSistema = formatos.filter((f) => f.sistema_id === sistema.id);
+  const formato = formatosDelSistema.find((f) => f.activo) ?? formatosDelSistema[0] ?? null;
 
   const [elementos, plantilla, zonas] = await Promise.all([
     obtenerElementosCatalogo(supabase, ciclo.id, sistema.id),
@@ -132,11 +137,16 @@ export default async function SistemaPage({
           <div className="mt-2">
             <Aviso tipo="ambar">
               Este sistema no tiene ningún formato RAG asociado. Se puede crear uno desde
-              Configuración → Importar y exportar.
+              Configuración → Importar y exportar, o desde RAG → Construir tipo nuevo.
             </Aviso>
           </div>
         ) : (
           <div className="mt-2">
+            {!formato.activo && (
+              <div className="mb-3">
+                <Aviso tipo="ambar">Este formato está dado de baja — reactívalo desde RAG → Ver e imprimir.</Aviso>
+              </div>
+            )}
             <FormatoEditor formato={formato} />
             <style dangerouslySetInnerHTML={{ __html: ESTILOS_RAG }} />
             <VisorRAG

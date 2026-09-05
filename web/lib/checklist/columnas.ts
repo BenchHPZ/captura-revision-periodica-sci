@@ -35,12 +35,12 @@ export interface ColumnaFijaChecklist {
 export function columnasFijasDe(tipo: "tabla_verificacion" | "tabla_simple"): ColumnaFijaChecklist[] {
   if (tipo === "tabla_simple") {
     return [
-      { id: "pos", etiqueta: "Pos.", anchoMM: ANCHO_POS_MM, clase: "chk-celda-pos" },
+      { id: "numero", etiqueta: "#", anchoMM: ANCHO_POS_MM, clase: "chk-celda-pos" },
       { id: "descripcion", etiqueta: "Descripción", anchoMM: ANCHO_DESCRIPCION_MM, clase: "chk-celda-descripcion" },
     ];
   }
   return [
-    { id: "pos", etiqueta: "Pos.", anchoMM: ANCHO_POS_MM, clase: "chk-celda-pos" },
+    { id: "numero", etiqueta: "#", anchoMM: ANCHO_POS_MM, clase: "chk-celda-pos" },
     { id: "nombre", etiqueta: "Equipo", anchoMM: ANCHO_NOMBRE_MM, clase: "chk-celda-nombre" },
     { id: "cantidad", etiqueta: "Cant.", anchoMM: ANCHO_CANTIDAD_MM, clase: "chk-celda-cantidad" },
     { id: "foto", etiqueta: "Foto", anchoMM: ANCHO_FOTO_MM, clase: "chk-celda-foto" },

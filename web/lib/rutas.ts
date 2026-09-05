@@ -33,3 +33,11 @@ export function rutaFoto(
 export function rutaEntrada(cicloClave: string): string {
   return `${cicloClave}/_entrada/${crypto.randomUUID()}.jpg`;
 }
+
+/** Foto de referencia de un ítem de checklist (docs/decisiones.md D-22) —
+ * mismo depósito 'evidencias', prefijo 'checklist-ref/{clave}/'. Sin
+ * ciclo: a diferencia de rutaFoto(), la foto de referencia es fija por
+ * definición del checklist, no se repite cada mes. */
+export function rutaChecklistRef(claveFormato: string, itemId: string, extension: string): string {
+  return `checklist-ref/${segmento(claveFormato)}/${itemId}.${extension}`;
+}

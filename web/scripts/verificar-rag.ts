@@ -1,18 +1,23 @@
 // Verificación de pureza y consistencia del documento RAG — corre suelto
 // con Node (npx tsx web/scripts/verificar-rag.ts), sin Next ni Supabase.
 //
-// Dos cosas:
+// Tres cosas:
 // 1. Que lib/rag/{documento,render,columnas}.ts se puedan importar aquí
 //    confirma la condición de D-16: nada en lib/rag/ depende de
 //    "server-only", "next/*" ni "react" — es lo que deja abierta una
 //    segunda entrada local sin rehacer el renderizador.
 // 2. Que columnasDe(doc).length, el <colgroup>, la fila de <th> y cada
 //    <td> de cada renglón —incluidos los colspan— den siempre el mismo
-//    número. Antes de columnas.ts ese conteo vivía repetido a mano en
-//    cinco lugares de render.ts, y el desajuste entre ellos ya causó una
-//    vez el defecto que docs/decisiones.md D-15 documenta haber
-//    corregido. Con columnas condicionales (D-19) el riesgo de que
-//    vuelva a pasar es real si no se comprueba en cada cambio.
+//    número, en CADA tabla (una por zona desde D-24, ver render.ts — antes
+//    era una sola tabla para todo el documento). Antes de columnas.ts ese
+//    conteo vivía repetido a mano en cinco lugares de render.ts, y el
+//    desajuste entre ellos ya causó una vez el defecto que
+//    docs/decisiones.md D-15 documenta haber corregido. Con columnas
+//    condicionales (D-19) y ahora con varias tablas (D-24) el riesgo de
+//    que vuelva a pasar es real si no se comprueba en cada una.
+// 3. Que el documento sin elementos siga produciendo exactamente una tabla
+//    (sin banner de zona), y que cada zona real aparezca como banner en
+//    su propia tabla — no una sola vez para todo el documento.
 import { armarDocumentoRAG, type EntradaDocumentoRAG } from "../lib/rag/documento";
 import { columnasDe } from "../lib/rag/columnas";
 import { renderizarCuerpoRAG } from "../lib/rag/render";
@@ -42,6 +47,8 @@ function formato(overrides: Partial<Formato> = {}): Formato {
     instrucciones: [],
     notas: null,
     columnas: { ubicacion: true, referencia: true },
+    activo: true,
+    columnas_fecha: 31,
     ...overrides,
   };
 }
@@ -68,34 +75,48 @@ function contarEnHTML(html: string, regex: RegExp): number {
   return (html.match(regex) ?? []).length;
 }
 
-function verificarCaso(titulo: string, entrada: EntradaDocumentoRAG) {
+function verificarCaso(titulo: string, entrada: EntradaDocumentoRAG, zonasEsperadas: string[]) {
   console.log(`\n${titulo}`);
   const doc = armarDocumentoRAG(entrada);
   const columnas = columnasDe(doc);
   const html = renderizarCuerpoRAG(doc);
 
-  const colCount = contarEnHTML(html, /<col style=/g);
-  const matchEncabezado = html.match(/<tr class="rag-encabezado-principal">([\s\S]*?)<\/tr>/);
-  const thCount = matchEncabezado ? (matchEncabezado[1]!.match(/<th/g) ?? []).length : 0;
-  const colspans = [...html.matchAll(/colspan="(\d+)"/g)].map((m) => Number(m[1]));
-  const colspansDistintos = [...new Set(colspans)];
+  const tablas = [...html.matchAll(/<table class="rag-tabla">([\s\S]*?)<\/table>/g)];
+  verificar(`produce ${zonasEsperadas.length || 1} tabla(s) (${tablas.length} encontradas)`, tablas.length === (zonasEsperadas.length || 1));
 
-  verificar(`columnasDe().length (${columnas.length}) === <col> en el colgroup (${colCount})`, columnas.length === colCount);
-  verificar(`columnasDe().length (${columnas.length}) === <th> del encabezado (${thCount})`, columnas.length === thCount);
-  verificar(
-    `todos los colspan usan el mismo número (${columnas.length})`,
-    colspansDistintos.length === 1 && colspansDistintos[0] === columnas.length,
-    `colspans encontrados: ${colspansDistintos.join(", ")}`,
-  );
+  for (const [, cuerpo] of tablas) {
+    const colCount = contarEnHTML(cuerpo!, /<col style=/g);
+    const matchEncabezado = cuerpo!.match(/<tr class="rag-encabezado-principal">([\s\S]*?)<\/tr>/);
+    const thCount = matchEncabezado ? (matchEncabezado[1]!.match(/<th/g) ?? []).length : 0;
+    const colspans = [...cuerpo!.matchAll(/colspan="(\d+)"/g)].map((m) => Number(m[1]));
+    const colspansDistintos = [...new Set(colspans)];
 
-  // Cada <tr class="rag-renglon"> debe tener exactamente columnas.length <td>.
-  const renglones = [...html.matchAll(/<tr class="rag-renglon">([\s\S]*?)<\/tr>/g)];
-  const tdCounts = renglones.map((r) => (r[1]!.match(/<td/g) ?? []).length);
-  const tdDistintos = [...new Set(tdCounts)];
+    verificar(`columnasDe().length (${columnas.length}) === <col> en el colgroup (${colCount})`, columnas.length === colCount);
+    verificar(`columnasDe().length (${columnas.length}) === <th> del encabezado (${thCount})`, columnas.length === thCount);
+    verificar(
+      `todos los colspan usan el mismo número (${columnas.length})`,
+      colspansDistintos.length === 1 && colspansDistintos[0] === columnas.length,
+      `colspans encontrados: ${colspansDistintos.join(", ")}`,
+    );
+
+    // Cada <tr class="rag-renglon"> debe tener exactamente columnas.length <td>.
+    const renglones = [...cuerpo!.matchAll(/<tr class="rag-renglon">([\s\S]*?)<\/tr>/g)];
+    const tdCounts = renglones.map((r) => (r[1]!.match(/<td/g) ?? []).length);
+    const tdDistintos = [...new Set(tdCounts)];
+    verificar(
+      `cada renglón tiene ${columnas.length} <td> (${renglones.length} renglones revisados)`,
+      tdDistintos.length <= 1 && (tdDistintos.length === 0 || tdDistintos[0] === columnas.length),
+      `conteos encontrados: ${tdDistintos.join(", ")}`,
+    );
+  }
+
+  // El banner de zona vive en el <thead> de la tabla de SU zona (D-24) —
+  // debe aparecer exactamente una vez por zona esperada, en el orden dado.
+  const banners = [...html.matchAll(/<tr class="rag-seccion"><th[^>]*>([^<]+)<\/th><\/tr>/g)].map((m) => m[1]);
   verificar(
-    `cada renglón tiene ${columnas.length} <td> (${renglones.length} renglones revisados)`,
-    tdDistintos.length <= 1 && (tdDistintos.length === 0 || tdDistintos[0] === columnas.length),
-    `conteos encontrados: ${tdDistintos.join(", ")}`,
+    `las zonas aparecen como banner, en orden (${zonasEsperadas.join(", ") || "ninguna"})`,
+    banners.join("|") === zonasEsperadas.join("|"),
+    `banners encontrados: ${banners.join(", ") || "ninguno"}`,
   );
 
   console.log(`  columnas: ${columnas.map((c) => c.id).join(", ")}`);
@@ -104,43 +125,65 @@ function verificarCaso(titulo: string, entrada: EntradaDocumentoRAG) {
 console.log("Verificación de pureza y consistencia del documento RAG");
 console.log("=".repeat(60));
 
+// elementosBase reparte en 3 zonas, en este orden (por zonaOrden, "Sin
+// zona" al final — ver agruparPorZona()/compararZonas()): Calle 1 (e1,
+// e2), Calle 2 (e3), Sin zona (e4, sin zona_id).
+const ZONAS_DE_ELEMENTOS_BASE = ["Calle 1", "Calle 2", "Sin zona"];
+
 // Caso 1: RAG 2.2 tal como quedó (D-19) — sin Ubicación, con Referencia
 // y con Tipo porque el sistema de prueba trae diccionario.
-verificarCaso("RAG 2.2 — sin ubicación, con referencia, con tipo", {
-  formato: formato({ clave: "RAG 2.2", columnas: { ubicacion: false, referencia: true } }),
-  puntos: puntosBase,
-  tipos: tiposBase,
-  elementos: elementosBase,
-});
+verificarCaso(
+  "RAG 2.2 — sin ubicación, con referencia, con tipo",
+  {
+    formato: formato({ clave: "RAG 2.2", columnas: { ubicacion: false, referencia: true } }),
+    puntos: puntosBase,
+    tipos: tiposBase,
+    elementos: elementosBase,
+  },
+  ZONAS_DE_ELEMENTOS_BASE,
+);
 
 // Caso 2: formato con las dos columnas y sin diccionario de tipos (Tipo
 // no debe aparecer).
-verificarCaso("RAG 2.3 — con ubicación y referencia, sin tipo", {
-  formato: formato({ clave: "RAG 2.3", columnas: { ubicacion: true, referencia: true } }),
-  puntos: puntosBase,
-  tipos: [],
-  elementos: elementosBase,
-});
+verificarCaso(
+  "RAG 2.3 — con ubicación y referencia, sin tipo",
+  {
+    formato: formato({ clave: "RAG 2.3", columnas: { ubicacion: true, referencia: true } }),
+    puntos: puntosBase,
+    tipos: [],
+    elementos: elementosBase,
+  },
+  ZONAS_DE_ELEMENTOS_BASE,
+);
 
 // Caso 3: en modo "lleno", con respuestas reales.
-verificarCaso("RAG 2.8 — con respuestas capturadas", {
-  formato: formato({ clave: "RAG 2.8", columnas: { ubicacion: true, referencia: false } }),
-  puntos: puntosBase,
-  tipos: [{ clave: "M", nombre: "Mariposa" }],
-  elementos: elementosBase,
-  respuestas: [
-    { elementoId: "e1", valores: { p1: true, p2: false }, observaciones: "Pendiente pintura" },
-    { elementoId: "e2", valores: { p1: "SI", p2: "NA" }, observaciones: null },
-  ],
-});
+verificarCaso(
+  "RAG 2.8 — con respuestas capturadas",
+  {
+    formato: formato({ clave: "RAG 2.8", columnas: { ubicacion: true, referencia: false } }),
+    puntos: puntosBase,
+    tipos: [{ clave: "M", nombre: "Mariposa" }],
+    elementos: elementosBase,
+    respuestas: [
+      { elementoId: "e1", valores: { p1: true, p2: false }, observaciones: "Pendiente pintura" },
+      { elementoId: "e2", valores: { p1: "SI", p2: "NA" }, observaciones: null },
+    ],
+  },
+  ZONAS_DE_ELEMENTOS_BASE,
+);
 
-// Caso 4: sin puntos y sin elementos (documento vacío de verdad).
-verificarCaso("Documento sin puntos ni elementos", {
-  formato: formato({ clave: "RAG 2.7" }),
-  puntos: [],
-  tipos: [],
-  elementos: [],
-});
+// Caso 4: sin puntos y sin elementos (documento vacío de verdad) — una
+// sola tabla, sin ningún banner de zona (ver D-24).
+verificarCaso(
+  "Documento sin puntos ni elementos",
+  {
+    formato: formato({ clave: "RAG 2.7" }),
+    puntos: [],
+    tipos: [],
+    elementos: [],
+  },
+  [],
+);
 
 console.log("\n" + "=".repeat(60));
 if (fallas > 0) {

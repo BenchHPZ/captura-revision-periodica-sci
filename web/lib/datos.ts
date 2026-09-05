@@ -377,8 +377,12 @@ export async function firmarRutas(
 /** La identidad y la imagen de un RAG. No cuelga de ningún ciclo — ver
  * docs/modelo-de-datos.md §2.8. */
 const SELECT_FORMATO =
-  "id, clave, nombre, periodicidad, sistema_id, tipo_documento, documento_referencia, revision, instrucciones, notas, columnas";
+  "id, clave, nombre, periodicidad, sistema_id, tipo_documento, documento_referencia, revision, instrucciones, notas, columnas, activo, columnas_fecha";
 
+/** Activos e inactivos por igual — a propósito, no sólo los activos:
+ * tanto /rag (toggle "mostrar de baja") como /sistemas/[clave] (aviso de
+ * reactivación) necesitan ver un formato dado de baja para poder
+ * reactivarlo o editarlo. Ver docs/decisiones.md D-23. */
 export async function obtenerFormatos(supabase: SupabaseClient): Promise<Formato[]> {
   const { data, error } = await supabase.from("formatos").select(SELECT_FORMATO).order("clave");
   if (error) throw error;
@@ -447,7 +451,7 @@ export async function obtenerChecklistCompleto(
 ): Promise<{ bloques: ChecklistBloqueConItems[]; fotoUrlPorRuta: Record<string, string> }> {
   const { data: bloques, error: errorBloques } = await supabase
     .from("checklist_bloques")
-    .select("id, formato_id, tipo, nombre, orden, columnas, filas_blanco")
+    .select("id, formato_id, tipo, nombre, orden, columnas, filas_blanco, agrupacion")
     .eq("formato_id", formatoId)
     .order("orden");
   if (errorBloques) throw errorBloques;
@@ -457,7 +461,7 @@ export async function obtenerChecklistCompleto(
   if (bloqueIds.length > 0) {
     const { data, error: errorItems } = await supabase
       .from("checklist_items")
-      .select("id, bloque_id, categoria, pos, nombre, cantidad, foto_referencia_ruta, verificaciones, orden, notas")
+      .select("id, bloque_id, categoria, ubicacion_fisica, pos, nombre, cantidad, foto_referencia_ruta, verificaciones, orden, notas")
       .in("bloque_id", bloqueIds)
       .order("orden");
     if (errorItems) throw errorItems;

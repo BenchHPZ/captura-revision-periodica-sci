@@ -100,12 +100,23 @@ export interface Formato {
    * observaciones) no son opcionales. Sin significado para un formato
    * 'checklist' — ver docs/decisiones.md D-22. */
   columnas: { ubicacion: boolean; referencia: boolean };
+  /** Baja recuperable — no borra nada, sólo saca la fila de las listas
+   * activas. Mismo patrón que elementos.activo/sistemas.activo/
+   * zonas.activo (D-18). Ver docs/decisiones.md D-23. */
+  activo: boolean;
+  /** Cuántas columnas de fecha imprime un checklist. Sin significado
+   * para 'rag'. Antes se derivaba del ciclo abierto en tiempo de
+   * solicitud; ahora es explícito y propio de cada formato — ver
+   * docs/decisiones.md D-23. */
+  columnas_fecha: number;
 }
 
 /** Un bloque de un formato 'checklist' (portada de fotos, tabla de
  * equipo, sub-checklist mecánico, bitácora libre) — forma cruda tal cual
  * la base, antes de resolverse a DocumentoChecklist (ver
  * web/lib/checklist/documento.ts). Ver docs/decisiones.md D-22. */
+export type CampoAgrupacionChecklist = "categoria" | "ubicacion_fisica";
+
 export interface ChecklistBloque {
   id: string;
   formato_id: string;
@@ -116,6 +127,9 @@ export interface ChecklistBloque {
   columnas: { id: string; etiqueta: string }[];
   /** Sólo 'bitacora_libre'. */
   filas_blanco: number | null;
+  /** Orden de agrupación anidada para tabla_verificacion/tabla_simple — 0 a 2 elementos.
+   * [] = sin banners de sección. Ver docs/decisiones.md D-22 y la migración 0009. */
+  agrupacion: CampoAgrupacionChecklist[];
 }
 
 /** Un renglón de un ChecklistBloque — forma cruda tal cual la base. */
@@ -123,6 +137,8 @@ export interface ChecklistItem {
   id: string;
   bloque_id: string;
   categoria: string | null;
+  /** Segunda dimensión de agrupación, independiente de 'categoria' — ver migración 0009. */
+  ubicacion_fisica: string | null;
   pos: string | null;
   nombre: string;
   cantidad: string | null;

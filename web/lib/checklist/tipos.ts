@@ -24,9 +24,16 @@ export interface VerificacionChecklist {
 export interface ItemChecklist {
   id: string;
   categoria: string | null;
-  /** Rótulo tal cual el documento de origen; puede repetirse — no es
-   * clave de nada, sólo se imprime. */
-  pos: string | null;
+  /** Segunda dimensión de agrupación, independiente de 'categoria' — ver
+   * docs/decisiones.md D-22 y la migración 0009. */
+  ubicacionFisica: string | null;
+  /** Correlativo 1..N calculado al armar el documento, no tecleado — ver
+   * docs/decisiones.md D-24. Reemplaza al viejo 'pos' (texto libre,
+   * heredado de transcribir PDFs de origen, que podía repetirse: "63"
+   * aparece 6 veces en el checklist real de la ambulancia). Se numera por
+   * BLOQUE, de corrido a través de sus categorías/ubicaciones — mismo
+   * patrón que RenglonRAG.id en web/lib/rag/documento.ts. */
+  numero: number;
   nombre: string;
   cantidad: string | null;
   /** URL firmada, ya resuelta — quien arma el documento resuelve la ruta
@@ -49,22 +56,30 @@ export interface BloquePortadaFotos extends BloqueChecklistBase {
   items: ItemChecklist[];
 }
 
-/** Ítems agrupados por 'categoria' — mismo propósito visual que
- * SeccionRAG (franja de sección), pero 'categoria' es texto libre propio
- * del checklist, no un catálogo compartido. */
-export interface CategoriaChecklist {
-  nombre: string;
+export type CampoAgrupacionChecklist = "categoria" | "ubicacion_fisica";
+
+/** Nodo de agrupación, hasta 2 niveles de anidado según el 'agrupacion'
+ * del bloque (ver docs/decisiones.md D-22 y la migración 0009) — mismo
+ * propósito visual que SeccionRAG (franja de sección), pero configurable
+ * en vez de fijo a un solo campo. Un nodo hoja trae 'items' poblado y
+ * 'subgrupos' vacío; un nodo con un nivel más de agrupación debajo trae
+ * 'subgrupos' poblado e 'items' vacío. Cuando 'agrupacion' del bloque es
+ * [], hay un único nodo raíz implícito con 'nombre: null' (sin banner) y
+ * todos los ítems como hoja. */
+export interface GrupoChecklist {
+  nombre: string | null;
   items: ItemChecklist[];
+  subgrupos: GrupoChecklist[];
 }
 
 export interface BloqueTablaVerificacion extends BloqueChecklistBase {
   tipo: "tabla_verificacion";
-  categorias: CategoriaChecklist[];
+  grupos: GrupoChecklist[];
 }
 
 export interface BloqueTablaSimple extends BloqueChecklistBase {
   tipo: "tabla_simple";
-  categorias: CategoriaChecklist[];
+  grupos: GrupoChecklist[];
 }
 
 export interface BloqueBitacoraLibre extends BloqueChecklistBase {
