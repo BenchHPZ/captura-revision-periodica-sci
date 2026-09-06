@@ -4,29 +4,45 @@
 // columnas de fecha, filas expandidas por verificación, la franja de
 // portada con fotos de identificación.
 import { ESTILOS_BASE_DOCUMENTO } from "../documentos/estilos-base";
+import { PAGINA_POR_DEFECTO, reglaPaginaCss, type ConfiguracionPagina } from "../documentos/pagina";
 
-export const ESTILOS_CHECKLIST = /* css */ `
+export function estilosChecklist(pagina: ConfiguracionPagina = PAGINA_POR_DEFECTO): string {
+  return /* css */ `
   ${ESTILOS_BASE_DOCUMENTO}
 
   .chk-doc {
     font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
   }
 
-  .chk-tabla {
+  /* ------------------------------------------------------ hoja / sección */
+
+  /* La tabla de hoja: su thead es el encabezado de página y su tfoot el
+     pie, repetidos por el navegador en cada página que ocupe. Todo el
+     contenido va en una sola celda, como tablas anidadas por sección —
+     ver docs/decisiones.md D-25. */
+  .chk-hoja {
     margin-bottom: 6mm;
   }
-  /* Varias hojas de la misma rebanada de fecha ya no fuerzan un salto de
-     página entre sí (ver docs/decisiones.md D-24) — sin este ajuste se
-     verían como cajas separadas con huecos en vez de una tabla continua.
-     Sólo se fusionan los bordes entre dos tablas consecutivas que NO
-     tengan un salto forzado entre ellas (.chk-salto-pagina marca dónde sí
-     empieza una sección/rebanada nueva). */
-  .chk-tabla:has(+ .chk-tabla:not(.chk-salto-pagina)) {
-    margin-bottom: 0;
-    border-bottom: none;
+  /* Sin padding ni borde propios: las tablas de sección de adentro deben
+     empezar exactamente en el borde izquierdo de la tabla de hoja, o sus
+     columnas de fecha dejarían de caer bajo la fila "Fecha" del
+     encabezado. Selector con dos clases a propósito, para ganarle a
+     ".doc-tabla td" de estilos-base.ts. */
+  .doc-tabla td.chk-hoja-celda {
+    padding: 0;
+    border: 0;
   }
-  .chk-tabla + .chk-tabla:not(.chk-salto-pagina) {
-    border-top: none;
+  /* La caja exterior la pone la tabla de hoja; una sección no dibuja la
+     suya, o se vería un borde doble entre secciones consecutivas. */
+  table.chk-seccion {
+    border: 0;
+    margin: 0;
+  }
+
+  .chk-instrucciones {
+    margin: 0;
+    padding: 3pt 4pt 3pt 16pt;
+    font-size: 7.5pt;
   }
 
   /* ------------------------------------------------ sección general */
@@ -54,7 +70,12 @@ export const ESTILOS_CHECKLIST = /* css */ `
 
   /* --------------------------------------------- fecha / grupo / cierre */
 
-  .chk-etiqueta-fila {
+  /* Selector con el ancestro a propósito: ".doc-tabla th" de
+     estilos-base.ts fuerza text-align:left y le gana a una clase suelta.
+     Se nota desde que la columna de etiquetas es ancha (la zona fija
+     completa del grupo, hasta 111mm): alineada a la izquierda, "Fecha"
+     quedaba a media hoja de las columnas que rotula. */
+  .doc-tabla th.chk-etiqueta-fila {
     background: var(--vw-dsb-10);
     font-size: 7pt;
     font-weight: 700;
@@ -159,9 +180,10 @@ export const ESTILOS_CHECKLIST = /* css */ `
 
   /* --------------------------------------------------------------- portada */
 
-  /* La portada ya es una <table class="doc-tabla chk-tabla chk-portada">
-     más (ver docs/decisiones.md D-24) — el borde y el margen los pone
-     .doc-tabla/.chk-tabla; aquí sólo el padding de la celda que envuelve
+  /* La portada es una sección más dentro de la hoja (ver
+     docs/decisiones.md D-25): el encabezado, las filas de Fecha/Grupo y
+     las de Nombre/Firma se las pone la tabla de hoja, igual que a
+     cualquier otro bloque. Aquí sólo el padding de la celda que envuelve
      la cuadrícula de fotos. */
   .chk-portada-celda-grid {
     padding: 4mm;
@@ -209,12 +231,14 @@ export const ESTILOS_CHECKLIST = /* css */ `
     }
   }
 
-  /* Apaisada a propósito — pedido explícito del usuario para este tipo
-     de documento (a diferencia de RAG, que es vertical). */
+  /* Tamaño y orientación vienen del formato, no de una constante cableada
+     aquí: la misma ConfiguracionPagina alimenta este @page y el
+     presupuesto de anchos de ./columnas.ts, así que no se pueden
+     desincronizar. Ver docs/decisiones.md D-25. */
   @media print {
     @page {
-      size: letter landscape;
-      margin: 8mm;
+      ${reglaPaginaCss(pagina)}
+      margin: ${pagina.margenMM}mm;
     }
     .chk-doc {
       -webkit-print-color-adjust: exact;
@@ -225,3 +249,4 @@ export const ESTILOS_CHECKLIST = /* css */ `
     }
   }
 `;
+}

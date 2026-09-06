@@ -1312,3 +1312,104 @@ porque ambos trabajan sobre HTML estático, donde no existen páginas.
 **Archivos:** `web/lib/checklist/tipos.ts`, `documento.ts`, `columnas.ts`, `render.ts`, `estilos.ts`;
 `web/lib/rag/render.ts`, `estilos.ts`; `web/app/(app)/rag/ConstructorChecklist.tsx`;
 `web/scripts/verificar-checklist.ts`, `verificar-rag.ts`.
+
+## D-25 · Una hoja, un encabezado: tablas anidadas, hoja configurable y bloques que comparten página
+
+**Contexto.** Un checklist gastaba más papel del necesario y repetía lo que no debía. Tres causas,
+todas en el código, no impresiones:
+
+- **Cada bloque abría hoja nueva, siempre.** El salto se aplicaba a la primera tabla de cada bloque
+  sin que nadie pudiera elegir otra cosa. Cuatro bloques cortos, cuatro hojas.
+- **El encabezado completo se repetía dentro de una misma hoja.** D-24 dejó una `<table>` por
+  (rebanada de fechas × sección), cada una con su `<thead>` de membrete, título, meta, AÑO/MES,
+  Fecha y Grupo, para que el banner de sección sobreviviera al salto de página. Cuando dos secciones
+  compartían hoja, todo eso salía dos veces. Ahí se aceptó como efecto secundario; el usuario pidió
+  explícitamente eliminarlo: *"Cada hoja generada debe tener únicamente 1 vez los siguientes
+  elementos"*.
+- **El tamaño de hoja estaba cableado y duplicado en cuatro lugares** que nadie ataba entre sí: el
+  `@page` de `checklist/estilos.ts`, el `255` de `checklist/columnas.ts`, el presupuesto propio de la
+  portada en `checklist/render.ts`, y el `<col style="width:8mm">` literal. En RAG, el
+  `letter portrait` de `estilos.ts` contra el `ANCHO_TOTAL_MM = 200` de `columnas.ts`. Cambiar de
+  hoja exigía tocarlos en coordinación, y el síntoma de no hacerlo habría sido un documento que se
+  sale del papel al imprimir, sin ningún error antes.
+
+**El conflicto, y cómo se resolvió.** "Un encabezado por hoja" y "el banner de sección se repite al
+cruzar página" parecen incompatibles bajo D-16: el navegador sólo repite `thead`/`tfoot`, así que lo
+que deba repetirse tiene que vivir en el `thead` de una tabla, y una tabla no puede tener dos
+encabezados de distinto alcance. Se le plantearon al usuario las tres salidas (banner una sola vez ·
+tablas anidadas · dejarlo como estaba) y eligió **probar primero la anidada**.
+
+Se probó antes de escribir una línea de producción: un fixture HTML a mano, impreso con Edge headless
+y revisado página por página. **Funciona**, y las cinco comprobaciones pasaron: el `thead` y el
+`tfoot` de la tabla externa salen en todas las páginas, el `thead` de la tabla interna (banner +
+encabezados de columna) se repite en las páginas de continuación, las columnas quedan alineadas y no
+aparecen páginas en blanco. La estructura quedó así:
+
+```
+<table class="chk-hoja">            una por grupo de hoja × rebanada de fechas
+  <thead>  membrete · título · "Impreso: mes año" · AÑO/MES · Fecha · Grupo
+  <tfoot>  Nombre · Firma · franja de pie
+  <tbody><tr><td class="chk-hoja-celda">
+      <table class="chk-seccion">   una por sección, con colgroup y thead propios
+```
+
+**El hallazgo que simplificó el resto.** Como cada tabla interna trae su propio `colgroup`, dos
+bloques con columnas distintas (Equipo con 5 columnas fijas, Mecánico con 2, una bitácora con las
+suyas) pueden compartir hoja sin ninguna rejilla común ni mapeo de `colspan`. Lo único que deben
+compartir es el **ancho total de la zona fija** — `columnasFijasDe(tipo, anchoObjetivoMM)` estira la
+columna de texto libre del bloque más angosto — para que sus columnas de fecha caigan bajo la fila
+"Fecha" del encabezado. Una bitácora ni siquiera necesita eso: reparte sus columnas como quiera sobre
+el ancho completo. El diseño alternativo (una tabla plana con rejilla unión y `colspan` calculado por
+bloque) habría sido bastante más código y peor resultado.
+
+**Qué se decidió, además:**
+
+- **`hoja_propia` por bloque** (migración 0011), con default `true`: reproduce exactamente el
+  comportamiento anterior, así que aplicar la migración no cambia ningún documento ya cargado. El
+  primer bloque siempre abre hoja — no hay hoja anterior a la cual unirse — y su casilla se
+  deshabilita en el constructor para que no parezca que hace algo.
+- **`tamano_hoja` y `orientacion` por formato**, con `web/lib/documentos/pagina.ts` como fuente única
+  que alimenta a la vez el `@page` y el presupuesto en milímetros. `presupuestoColumnasMM` reproduce
+  con `Math.round` los mismos 255 y 200 que estaban tecleados, y los verificadores lo asertan: el
+  cambio de infraestructura es demostrablemente neutro. El tamaño **sí** cambia a A4 para los
+  formatos ya cargados, porque el área lo pidió como estándar; A4 apaisada es más ancha que Carta
+  apaisada (297 contra 279.4), así que caben más columnas de fecha por hoja.
+- **El nombre del bloque deja de imprimirse.** Vivía en la línea meta del encabezado, que ahora es de
+  la hoja y no del bloque; el usuario prefirió quitarlo a moverlo.
+- **"Impreso: sep 2026"** reemplaza a "Generado 5 sept 2026, 1:31 p.m.". El documento se imprime en
+  blanco y se llena a mano a lo largo del mes: la hora exacta de generación no le decía nada a nadie
+  y ensuciaba un encabezado que ahora se repite en cada hoja. (No había ningún campo de autor que
+  quitar: se buscó, no existe.)
+- **Las instrucciones bajan al cuerpo.** Estaban en el `thead` de la primera tabla, de modo que se
+  repetían en cada página de ese bloque. La lista de lo que debe aparecer una vez por hoja no las
+  incluye: ahora se imprimen una sola vez, al principio del documento.
+- **El banner externo sólo se emite cuando cambia.** Mientras se mantenga la ubicación física, no se
+  reescribe cada vez que cambia la categoría de adentro — pedido explícito del usuario. Antes se
+  emitía siempre porque cada sección era su propia tabla y no había "anterior".
+- **`alto_fila_mm` en la bitácora.** Sus filas en blanco eran celdas vacías sin altura definida en
+  ningún CSS: quedaban de ~2.5mm, imposibles de llenar a mano. Default 8mm, cercano al de la fila de
+  cierre (9mm), que sí estaba dimensionada para escribir encima. De paso, `filas_blanco` gana el
+  CHECK que nunca tuvo (aceptaba 0 y negativos).
+- **Se respeta el orden de los bloques.** `renderizarCuerpoChecklist` reordenaba por tipo (portada →
+  tablas → bitácora) y descartaba en silencio una segunda portada o bitácora. Agrupar exige respetar
+  `orden`; de paso desaparece esa pérdida silenciosa.
+
+**Lo que se acepta.** En un grupo que mezcla bloques de tipos distintos, un bloque que se derrama a
+la hoja siguiente aparece ahí sin su fila de encabezados de columna, porque esa fila vive en el
+`thead` de su sección y no en el de la hoja. Es inherente a D-16 y sólo se elimina generando el PDF
+en el servidor. La casilla del constructor lo advierte con texto cuando se desmarca.
+
+**Verificación.** Además de los dos scripts (que ahora asertan la invariante de que cada fila cubre
+exactamente las columnas de su tabla, contando lo heredado por `rowspan` — atrapó un error real
+durante el desarrollo), se imprimió de verdad con datos de producción: RAG 4.1 (156 ítems, 16
+columnas de fecha) con los bloques separados y unidos, y RAG 2.3 (74 elementos en 2 zonas). Con todo
+unido, la portada, el primer botiquín y sus secciones comparten la primera hoja; Mecánico y la
+bitácora comparten la última; el membrete y el pie de firmas salen exactamente una vez por hoja. En
+RAG, "Oficinas" empieza a media hoja sin repetir el membrete — el defecto que D-24 había aceptado.
+
+**Archivos:** `supabase/migrations/0011_hoja_y_bloques.sql`; `web/lib/documentos/pagina.ts`,
+`opciones.ts`; `web/lib/checklist/paginas.ts`, `render.ts`, `columnas.ts`, `estilos.ts`, `tipos.ts`,
+`documento.ts`, `constantes.ts`; `web/lib/rag/render.ts`, `columnas.ts`, `estilos.ts`;
+`web/components/Campo.tsx`; `web/app/(app)/rag/ConstructorChecklist.tsx`, `ConstructorFormatoRag.tsx`,
+`actions.ts`, `[formato]/page.tsx`; `web/app/(app)/sistemas/[clave]/page.tsx`, `FormatoEditor.tsx`,
+`actions.ts`; `web/scripts/verificar-checklist.ts`, `verificar-rag.ts`.

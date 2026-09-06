@@ -49,6 +49,11 @@ export interface ColumnaBitacora {
 
 interface BloqueChecklistBase {
   nombre: string;
+  /** true: el bloque empieza en hoja nueva. false: continúa en la hoja del
+   * bloque anterior, y sólo se parte donde caiga el salto natural por
+   * tamaño de papel. Ignorado en el primer bloque (no hay hoja anterior a
+   * la cual unirse). Ver docs/decisiones.md D-25 y la migración 0011. */
+  hojaPropia: boolean;
 }
 
 export interface BloquePortadaFotos extends BloqueChecklistBase {
@@ -86,6 +91,10 @@ export interface BloqueBitacoraLibre extends BloqueChecklistBase {
   tipo: "bitacora_libre";
   columnas: ColumnaBitacora[];
   filasBlanco: number;
+  /** Alto en milímetros de cada renglón en blanco — antes no existía y las
+   * filas quedaban de ~2.5mm, imposibles de llenar a mano. Ver
+   * docs/decisiones.md D-25. */
+  altoFilaMM: number;
 }
 
 export type BloqueChecklist = BloquePortadaFotos | BloqueTablaVerificacion | BloqueTablaSimple | BloqueBitacoraLibre;

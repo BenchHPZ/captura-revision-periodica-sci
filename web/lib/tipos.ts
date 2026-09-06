@@ -1,6 +1,7 @@
 // Formas compartidas entre servidor y cliente. Reflejan exactamente el
 // diccionario de datos en docs/modelo-de-datos.md — cualquier cambio ahí
 // debe replicarse aquí.
+import type { ClaveTamanoHoja, OrientacionHoja } from "./documentos/pagina";
 
 export type Estado = "sin_iniciar" | "parcial" | "completo";
 
@@ -109,6 +110,12 @@ export interface Formato {
    * solicitud; ahora es explícito y propio de cada formato — ver
    * docs/decisiones.md D-23. */
   columnas_fecha: number;
+  /** Tamaño y orientación de la hoja en la que se imprime este formato.
+   * Antes estaban cableados en el CSS de cada motor y recalculados a mano
+   * en tres constantes de milímetros más; ahora salen de aquí y los
+   * resuelve web/lib/documentos/pagina.ts. Ver docs/decisiones.md D-25. */
+  tamano_hoja: ClaveTamanoHoja;
+  orientacion: OrientacionHoja;
 }
 
 /** Un bloque de un formato 'checklist' (portada de fotos, tabla de
@@ -127,9 +134,15 @@ export interface ChecklistBloque {
   columnas: { id: string; etiqueta: string }[];
   /** Sólo 'bitacora_libre'. */
   filas_blanco: number | null;
+  /** Sólo 'bitacora_libre': alto en milímetros de cada renglón en blanco,
+   * para que se pueda escribir a mano encima. Ver docs/decisiones.md D-25. */
+  alto_fila_mm: number;
   /** Orden de agrupación anidada para tabla_verificacion/tabla_simple — 0 a 2 elementos.
    * [] = sin banners de sección. Ver docs/decisiones.md D-22 y la migración 0009. */
   agrupacion: CampoAgrupacionChecklist[];
+  /** true: empieza en hoja nueva. false: continúa en la hoja del bloque
+   * anterior. Ignorado en el primer bloque. Ver docs/decisiones.md D-25. */
+  hoja_propia: boolean;
 }
 
 /** Un renglón de un ChecklistBloque — forma cruda tal cual la base. */

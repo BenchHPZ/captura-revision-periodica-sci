@@ -2,7 +2,7 @@
 // nada, no sabe qué es Supabase, mismo criterio que web/lib/rag/documento.ts
 // (ver docs/decisiones.md D-16 y D-22).
 import { CLASIFICACION, DOMICILIO, RAZON_SOCIAL } from "../documentos/constantes";
-import { INSTRUCCION_GENERAL_CHECKLIST } from "./constantes";
+import { ALTO_FILA_BITACORA_POR_DEFECTO_MM, INSTRUCCION_GENERAL_CHECKLIST } from "./constantes";
 import type {
   BloqueChecklist,
   CampoAgrupacionChecklist,
@@ -36,9 +36,13 @@ export interface BloqueChecklistCrudo {
   orden: number;
   columnas: ColumnaBitacora[];
   filasBlanco: number | null;
+  /** Sólo tiene efecto en bitacora_libre. Ver docs/decisiones.md D-25. */
+  altoFilaMM: number | null;
   /** Orden de agrupación anidada (0 a 2 campos) — sólo tiene efecto en
    * tabla_verificacion/tabla_simple. Ver docs/decisiones.md D-22. */
   agrupacion: CampoAgrupacionChecklist[];
+  /** Ver BloqueChecklistBase.hojaPropia en ./tipos.ts. */
+  hojaPropia: boolean;
   items: ItemChecklistCrudo[];
 }
 
@@ -147,25 +151,27 @@ function agruparItems(
 }
 
 function bloqueDe(crudo: BloqueChecklistCrudo, fotoUrlPorRuta: Record<string, string>): BloqueChecklist {
+  const base = { nombre: crudo.nombre, hojaPropia: crudo.hojaPropia };
   switch (crudo.tipo) {
     case "portada_fotos":
       // 'numero' no se imprime para este tipo de bloque (no tiene columna
       // "#"); se asigna de todos modos por simplicidad de tipo.
       return {
+        ...base,
         tipo: "portada_fotos",
-        nombre: crudo.nombre,
         items: [...crudo.items].sort((a, b) => a.orden - b.orden).map((i, idx) => itemDe(i, fotoUrlPorRuta, idx + 1)),
       };
     case "tabla_verificacion":
-      return { tipo: "tabla_verificacion", nombre: crudo.nombre, grupos: agruparItems(crudo.items, crudo.agrupacion, fotoUrlPorRuta) };
+      return { ...base, tipo: "tabla_verificacion", grupos: agruparItems(crudo.items, crudo.agrupacion, fotoUrlPorRuta) };
     case "tabla_simple":
-      return { tipo: "tabla_simple", nombre: crudo.nombre, grupos: agruparItems(crudo.items, crudo.agrupacion, fotoUrlPorRuta) };
+      return { ...base, tipo: "tabla_simple", grupos: agruparItems(crudo.items, crudo.agrupacion, fotoUrlPorRuta) };
     case "bitacora_libre":
       return {
+        ...base,
         tipo: "bitacora_libre",
-        nombre: crudo.nombre,
         columnas: crudo.columnas,
         filasBlanco: crudo.filasBlanco ?? 0,
+        altoFilaMM: crudo.altoFilaMM ?? ALTO_FILA_BITACORA_POR_DEFECTO_MM,
       };
   }
 }

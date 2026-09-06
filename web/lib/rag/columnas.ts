@@ -8,13 +8,16 @@
 // módulo. render.ts deriva sus cinco usos de columnasDe(); totalCols pasa
 // a ser columnas.length, así que los dos conteos coinciden por
 // construcción — ver docs/decisiones.md D-19.
+import { PAGINA_POR_DEFECTO, presupuestoColumnasMM, type ConfiguracionPagina } from "../documentos/pagina";
 import type { TipoPunto } from "../tipos";
 import type { DocumentoRAG } from "./tipos";
 
-// Presupuesto de ancho en milímetros, para usar la hoja completa (Carta,
-// márgenes de 8mm ⇒ ≈200mm útiles) sin dejarlo a la suerte del navegador.
-// Observaciones se lleva todo lo que sobra.
-const ANCHO_TOTAL_MM = 200;
+// El presupuesto de ancho ya no se supone aquí: sale de la hoja del
+// formato, vía web/lib/documentos/pagina.ts — la misma fuente que alimenta
+// el @page del CSS, para que no puedan desincronizarse (antes eran el 200
+// de aquí contra el `letter portrait` de estilos.ts, sin nada que los
+// atara; ver docs/decisiones.md D-25). Sin holgura: Observaciones se lleva
+// todo lo que sobra, así que el redondeo no aprieta a nadie.
 const ANCHO_ID_MM = 7;
 const ANCHO_NUMERACION_MM = 20;
 const ANCHO_UBICACION_MM = 18;
@@ -41,7 +44,7 @@ function esPuntoRespuesta(tipo: TipoPunto): boolean {
   return tipo === "si_no" || tipo === "si_no_na";
 }
 
-export function columnasDe(doc: DocumentoRAG): ColumnaRAG[] {
+export function columnasDe(doc: DocumentoRAG, pagina: ConfiguracionPagina = PAGINA_POR_DEFECTO): ColumnaRAG[] {
   const columnas: ColumnaRAG[] = [
     { id: "id", etiqueta: "#", anchoMM: ANCHO_ID_MM, clase: "rag-celda-id", origen: "fijo", vertical: false },
     {
@@ -98,7 +101,7 @@ export function columnasDe(doc: DocumentoRAG): ColumnaRAG[] {
   }
 
   const anchoUsado = columnas.reduce((suma, c) => suma + c.anchoMM, 0);
-  const anchoObservaciones = Math.max(ANCHO_OBSERVACIONES_MIN_MM, ANCHO_TOTAL_MM - anchoUsado);
+  const anchoObservaciones = Math.max(ANCHO_OBSERVACIONES_MIN_MM, presupuestoColumnasMM(pagina, 0) - anchoUsado);
   columnas.push({
     id: "observaciones",
     etiqueta: "Observaciones",

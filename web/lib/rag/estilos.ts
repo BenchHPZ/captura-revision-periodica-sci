@@ -9,7 +9,10 @@
 // blancos de punta a punta, con el verde reservado a los divisores de
 // sección — ver las fotos de referencia que dieron forma a este diseño
 // (docs/decisiones.md D-15 §7.4).
-export const ESTILOS_RAG = /* css */ `
+import { PAGINA_POR_DEFECTO, reglaPaginaCss, type ConfiguracionPagina } from "../documentos/pagina";
+
+export function estilosRag(pagina: ConfiguracionPagina = PAGINA_POR_DEFECTO): string {
+  return /* css */ `
   :root {
     --vw-deep-space: #002733;
     --vw-vivid-green: #008C82;
@@ -32,26 +35,31 @@ export const ESTILOS_RAG = /* css */ `
     line-height: 1.3;
   }
 
-  .rag-tabla {
+  /* La tabla de hoja: su thead es el membrete y su tfoot el pie con las
+     firmas, repetidos por el navegador en cada página. Dentro, una tabla
+     por zona (.rag-tabla) — ver docs/decisiones.md D-25. */
+  .rag-hoja {
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
     border: 1.5pt solid var(--vw-deep-space);
   }
-  /* Una tabla por zona, no una para todo el documento (ver
-     docs/decisiones.md D-24) — sin este ajuste, dos zonas que comparten
-     una misma página impresa (no hay salto forzado entre ellas) se
-     verían como dos cajas con un borde doble en medio en vez de una
-     tabla continua. */
-  .rag-tabla + .rag-tabla {
-    border-top: none;
-  }
-  .rag-tabla:has(+ .rag-tabla) {
-    border-bottom: none;
+  /* Sin padding ni borde: las tablas de zona empiezan justo en el borde
+     de la hoja. Dos clases a propósito, para ganarle a ".rag-hoja td". */
+  .rag-hoja td.rag-hoja-celda {
+    padding: 0;
+    border: 0;
   }
 
-  .rag-tabla th,
-  .rag-tabla td {
+  .rag-tabla {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    border: 0;
+  }
+
+  .rag-hoja th,
+  .rag-hoja td {
     border: 0.75pt solid var(--vw-dsb-20);
     padding: 1.5pt 3pt;
     text-align: left;
@@ -60,10 +68,14 @@ export const ESTILOS_RAG = /* css */ `
   }
 
   /* thead/tfoot se repiten nativamente en cada página impresa — ver
-     docs/decisiones.md D-16. No hace falta programarlo, sólo declararlo. */
+     docs/decisiones.md D-16. No hace falta programarlo, sólo declararlo.
+     Aplica igual a la tabla de hoja (membrete y firmas) y a las de zona
+     (banner y encabezados de columna). */
+  .rag-hoja thead,
   .rag-tabla thead {
     display: table-header-group;
   }
+  .rag-hoja tfoot,
   .rag-tabla tfoot {
     display: table-footer-group;
   }
@@ -316,10 +328,13 @@ export const ESTILOS_RAG = /* css */ `
     }
   }
 
+  /* Tamaño y orientación vienen del formato, no de una constante cableada
+     aquí: la misma ConfiguracionPagina alimenta este @page y el
+     presupuesto de anchos de ./columnas.ts. Ver docs/decisiones.md D-25. */
   @media print {
     @page {
-      size: letter portrait;
-      margin: 8mm;
+      ${reglaPaginaCss(pagina)}
+      margin: ${pagina.margenMM}mm;
     }
     body {
       margin: 0;
@@ -330,3 +345,4 @@ export const ESTILOS_RAG = /* css */ `
     }
   }
 `;
+}

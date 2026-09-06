@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { DIAS_POR_DEFECTO } from "@/lib/checklist/constantes";
+import { ALTO_FILA_BITACORA_POR_DEFECTO_MM, DIAS_POR_DEFECTO } from "@/lib/checklist/constantes";
+import { esClaveTamanoHoja, esOrientacionHoja, type ClaveTamanoHoja, type OrientacionHoja } from "@/lib/documentos/pagina";
 import type { CampoAgrupacionChecklist } from "@/lib/tipos";
 
 // =====================================================================
@@ -57,6 +58,13 @@ export interface BloqueChecklistImportado {
   columnas?: ColumnaBitacoraImportada[];
   /** Sólo bitacora_libre. */
   filas_blanco?: number | null;
+  /** Sólo bitacora_libre: alto de cada renglón en blanco, en mm. Opcional
+   * para no romper un JSON escrito antes — ver docs/decisiones.md D-25. */
+  alto_fila_mm?: number | null;
+  /** true (o ausente): el bloque empieza en hoja nueva, el comportamiento
+   * de siempre. false: continúa en la hoja del bloque anterior. Ver
+   * docs/decisiones.md D-25. */
+  hoja_propia?: boolean;
 }
 
 export interface FormatoChecklistImportado {
@@ -71,6 +79,10 @@ export interface FormatoChecklistImportado {
    * guardado antes de esta característica; ausente = DIAS_POR_DEFECTO
    * (31), el mismo respaldo que ya existía. Ver docs/decisiones.md D-23. */
   columnas_fecha?: number;
+  /** Hoja en la que se imprime. Opcionales: ausentes toman el default de
+   * la base (A4 vertical). Ver docs/decisiones.md D-25. */
+  tamano_hoja?: ClaveTamanoHoja;
+  orientacion?: OrientacionHoja;
 }
 
 export interface ChecklistImportado {
@@ -102,6 +114,12 @@ function validarChecklist(datos: ChecklistImportado): string[] {
   if (!Array.isArray(bloques) || bloques.length === 0) {
     throw new Error('Falta un arreglo "bloques" con al menos un elemento.');
   }
+  if (formato.tamano_hoja !== undefined && !esClaveTamanoHoja(formato.tamano_hoja)) {
+    throw new Error('"tamano_hoja" debe ser a4, carta u oficio.');
+  }
+  if (formato.orientacion !== undefined && !esOrientacionHoja(formato.orientacion)) {
+    throw new Error('"orientacion" debe ser vertical o apaisada.');
+  }
 
   const advertencias: string[] = [];
   let portadas = 0;
@@ -129,8 +147,14 @@ function validarChecklist(datos: ChecklistImportado): string[] {
       if (!b.items || b.items.length === 0) advertencias.push(`'${referencia}': no trae ítems.`);
     }
 
-    if (b.tipo === "bitacora_libre" && (!b.columnas || b.columnas.length === 0)) {
-      advertencias.push(`'${referencia}': no trae columnas.`);
+    if (b.tipo === "bitacora_libre") {
+      if (!b.columnas || b.columnas.length === 0) advertencias.push(`'${referencia}': no trae columnas.`);
+      if (b.filas_blanco !== undefined && b.filas_blanco !== null && (!Number.isInteger(b.filas_blanco) || b.filas_blanco < 1)) {
+        throw new Error(`'${referencia}': "filas_blanco" debe ser un entero mayor a 0.`);
+      }
+      if (b.alto_fila_mm !== undefined && b.alto_fila_mm !== null && (!Number.isInteger(b.alto_fila_mm) || b.alto_fila_mm < 1 || b.alto_fila_mm > 60)) {
+        throw new Error(`'${referencia}': "alto_fila_mm" debe ser un entero entre 1 y 60.`);
+      }
     }
 
     for (const item of b.items ?? []) {
@@ -138,12 +162,13 @@ function validarChecklist(datos: ChecklistImportado): string[] {
     }
   }
 
-  // renderizarCuerpoChecklist() sólo toma el PRIMER portada_fotos y el
-  // PRIMER bitacora_libre del documento (ver web/lib/checklist/render.ts);
-  // uno adicional no rompe el import, pero se imprimiría como si no
-  // existiera — mejor avisar aquí que dejar que desaparezca en silencio.
-  if (portadas > 1) advertencias.push(`Hay ${portadas} bloques "portada_fotos"; sólo el primero se imprime.`);
-  if (bitacoras > 1) advertencias.push(`Hay ${bitacoras} bloques "bitacora_libre"; sólo el primero se imprime.`);
+  // Ya no hay límite técnico: renderizarCuerpoChecklist() recorre los
+  // bloques en su orden y los imprime todos (antes tomaba sólo el primer
+  // portada_fotos y el primer bitacora_libre, y descartaba el resto en
+  // silencio — ver docs/decisiones.md D-25). Varias portadas siguen siendo
+  // raras, así que se avisa, pero como duda, no como pérdida.
+  if (portadas > 1) advertencias.push(`Hay ${portadas} bloques "portada_fotos"; se imprimirán todos, en el orden dado.`);
+  if (bitacoras > 1) advertencias.push(`Hay ${bitacoras} bloques "bitacora_libre"; se imprimirán todos, en el orden dado.`);
 
   return advertencias;
 }
@@ -180,6 +205,8 @@ async function reconciliarChecklist(datos: ChecklistImportado, aplicar: boolean)
         instrucciones: datos.formato.instrucciones ?? [],
         notas: datos.formato.notas ?? null,
         columnas_fecha: datos.formato.columnas_fecha ?? DIAS_POR_DEFECTO,
+        tamano_hoja: datos.formato.tamano_hoja ?? "a4",
+        orientacion: datos.formato.orientacion ?? "apaisada",
       },
       { onConflict: "clave" },
     )
@@ -204,7 +231,9 @@ async function reconciliarChecklist(datos: ChecklistImportado, aplicar: boolean)
         orden: bloque.orden,
         columnas: bloque.columnas ?? [],
         filas_blanco: bloque.filas_blanco ?? null,
+        alto_fila_mm: bloque.alto_fila_mm ?? ALTO_FILA_BITACORA_POR_DEFECTO_MM,
         agrupacion: bloque.agrupacion ?? [],
+        hoja_propia: bloque.hoja_propia ?? true,
       })
       .select("id")
       .single();
@@ -257,6 +286,8 @@ export interface DatosFormatoRagNuevo {
   revision: string | null;
   instrucciones: string[];
   columnas: { ubicacion: boolean; referencia: boolean };
+  tamano_hoja: ClaveTamanoHoja;
+  orientacion: OrientacionHoja;
 }
 
 export async function crearFormatoRag(datos: DatosFormatoRagNuevo): Promise<{ id: string; sistemaClave: string }> {
@@ -298,6 +329,8 @@ export async function crearFormatoRag(datos: DatosFormatoRagNuevo): Promise<{ id
       tipo_documento: "rag",
       documento_referencia: datos.documento_referencia,
       revision: datos.revision,
+      tamano_hoja: datos.tamano_hoja,
+      orientacion: datos.orientacion,
       instrucciones: datos.instrucciones,
       columnas: datos.columnas,
       activo: true,

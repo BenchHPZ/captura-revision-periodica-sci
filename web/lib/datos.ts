@@ -377,7 +377,7 @@ export async function firmarRutas(
 /** La identidad y la imagen de un RAG. No cuelga de ningún ciclo — ver
  * docs/modelo-de-datos.md §2.8. */
 const SELECT_FORMATO =
-  "id, clave, nombre, periodicidad, sistema_id, tipo_documento, documento_referencia, revision, instrucciones, notas, columnas, activo, columnas_fecha";
+  "id, clave, nombre, periodicidad, sistema_id, tipo_documento, documento_referencia, revision, instrucciones, notas, columnas, activo, columnas_fecha, tamano_hoja, orientacion";
 
 /** Activos e inactivos por igual — a propósito, no sólo los activos:
  * tanto /rag (toggle "mostrar de baja") como /sistemas/[clave] (aviso de
@@ -451,7 +451,7 @@ export async function obtenerChecklistCompleto(
 ): Promise<{ bloques: ChecklistBloqueConItems[]; fotoUrlPorRuta: Record<string, string> }> {
   const { data: bloques, error: errorBloques } = await supabase
     .from("checklist_bloques")
-    .select("id, formato_id, tipo, nombre, orden, columnas, filas_blanco, agrupacion")
+    .select("id, formato_id, tipo, nombre, orden, columnas, filas_blanco, alto_fila_mm, agrupacion, hoja_propia")
     .eq("formato_id", formatoId)
     .order("orden");
   if (errorBloques) throw errorBloques;

@@ -4,7 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Aviso } from "@/components/Aviso";
 import { BotonPrimario } from "@/components/Boton";
-import { CampoTexto } from "@/components/Campo";
+import { CampoSelect, CampoTexto } from "@/components/Campo";
+import { OPCIONES_ORIENTACION, OPCIONES_TAMANO_HOJA } from "@/lib/documentos/opciones";
+import type { ClaveTamanoHoja, OrientacionHoja } from "@/lib/documentos/pagina";
 import type { Formato } from "@/lib/tipos";
 import { guardarFormato, type DatosFormatoEditable } from "./actions";
 
@@ -34,6 +36,8 @@ export function FormatoEditor({ formato }: Props) {
   const [instruccionesTexto, setInstruccionesTexto] = useState(formato.instrucciones.join("\n"));
   const [ubicacion, setUbicacion] = useState(formato.columnas.ubicacion);
   const [referencia, setReferencia] = useState(formato.columnas.referencia);
+  const [tamanoHoja, setTamanoHoja] = useState<ClaveTamanoHoja>(formato.tamano_hoja);
+  const [orientacion, setOrientacion] = useState<OrientacionHoja>(formato.orientacion);
   const [estado, setEstado] = useState<Estado>({ fase: "editando" });
 
   async function guardar() {
@@ -49,6 +53,8 @@ export function FormatoEditor({ formato }: Props) {
           .map((l) => l.trim())
           .filter(Boolean),
         columnas: { ubicacion, referencia },
+        tamano_hoja: tamanoHoja,
+        orientacion,
       };
       await guardarFormato(formato.id, datos);
       setEstado({ fase: "guardado" });
@@ -82,6 +88,20 @@ export function FormatoEditor({ formato }: Props) {
             <CampoTexto etiqueta="Periodicidad" valor={periodicidad} onChange={setPeriodicidad} />
             <CampoTexto etiqueta="Documento de referencia" valor={documentoReferencia} onChange={setDocumentoReferencia} />
             <CampoTexto etiqueta="Revisión" valor={revision} onChange={setRevision} />
+            <CampoSelect
+              etiqueta="Tamaño de hoja"
+              valor={tamanoHoja}
+              onChange={(v) => setTamanoHoja(v as ClaveTamanoHoja)}
+              opciones={OPCIONES_TAMANO_HOJA}
+              sinVacio
+            />
+            <CampoSelect
+              etiqueta="Orientación"
+              valor={orientacion}
+              onChange={(v) => setOrientacion(v as OrientacionHoja)}
+              opciones={OPCIONES_ORIENTACION}
+              sinVacio
+            />
           </div>
 
           <div className="mt-3">

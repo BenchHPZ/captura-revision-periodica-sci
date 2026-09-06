@@ -2,8 +2,8 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { obtenerChecklistCompleto, obtenerCicloAbierto, obtenerFormatoPorClave, obtenerSistemas } from "@/lib/datos";
 import { armarDocumentoChecklist, type BloqueChecklistCrudo } from "@/lib/checklist/documento";
-import { renderizarCuerpoChecklist, renderizarDocumentoCompleto } from "@/lib/checklist/render";
-import { ESTILOS_CHECKLIST } from "@/lib/checklist/estilos";
+import { renderizarChecklist } from "@/lib/checklist/render";
+import { paginaDeFormato } from "@/lib/documentos/pagina";
 import { slugAClave } from "@/lib/rag/documento";
 import { VisorDocumento } from "@/components/VisorDocumento";
 import { Aviso } from "@/components/Aviso";
@@ -43,7 +43,9 @@ export default async function RagFormatoPage({ params }: { params: Promise<{ for
     orden: b.orden,
     columnas: b.columnas,
     filasBlanco: b.filas_blanco,
+    altoFilaMM: b.alto_fila_mm,
     agrupacion: b.agrupacion,
+    hojaPropia: b.hoja_propia,
     items: b.items.map((i) => ({
       id: i.id,
       categoria: i.categoria,
@@ -74,8 +76,10 @@ export default async function RagFormatoPage({ params }: { params: Promise<{ for
     cicloNombre: ciclo?.nombre ?? null,
   });
 
-  const htmlCuerpo = renderizarCuerpoChecklist(documento);
-  const htmlCompleto = renderizarDocumentoCompleto(documento);
+  // Cuerpo, estilos y documento completo salen de la misma hoja: no hay
+  // forma de que la vista embebida y el PDF usen configuraciones
+  // distintas. Ver docs/decisiones.md D-25.
+  const documentoHtml = renderizarChecklist(documento, paginaDeFormato(formato));
 
   // Inverso de bloquesCrudo de arriba (misma fuente, otra forma): lo que
   // ConstructorChecklist.tsx necesita para arrancar prellenado en modo
@@ -90,6 +94,8 @@ export default async function RagFormatoPage({ params }: { params: Promise<{ for
       instrucciones: formato.instrucciones,
       notas: formato.notas,
       columnas_fecha: formato.columnas_fecha,
+      tamano_hoja: formato.tamano_hoja,
+      orientacion: formato.orientacion,
     },
     bloques: bloques.map((b) => ({
       tipo: b.tipo,
@@ -98,6 +104,8 @@ export default async function RagFormatoPage({ params }: { params: Promise<{ for
       agrupacion: b.agrupacion,
       columnas: b.columnas,
       filas_blanco: b.filas_blanco,
+      alto_fila_mm: b.alto_fila_mm,
+      hoja_propia: b.hoja_propia,
       items: b.items.map((i) => ({
         categoria: i.categoria,
         ubicacion_fisica: i.ubicacion_fisica,
@@ -128,8 +136,8 @@ export default async function RagFormatoPage({ params }: { params: Promise<{ for
       <ConstructorChecklist inicial={{ formatoId: formato.id, datos: datosInicial }} />
 
       <div className="mt-10">
-        <style dangerouslySetInnerHTML={{ __html: ESTILOS_CHECKLIST }} />
-        <VisorDocumento html={htmlCuerpo} htmlCompleto={htmlCompleto} soloVacio volverHref="/rag" />
+        <style dangerouslySetInnerHTML={{ __html: documentoHtml.estilos }} />
+        <VisorDocumento html={documentoHtml.cuerpo} htmlCompleto={documentoHtml.completo} soloVacio volverHref="/rag" />
       </div>
     </div>
   );

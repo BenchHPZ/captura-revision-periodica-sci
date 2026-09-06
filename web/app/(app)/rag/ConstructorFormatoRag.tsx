@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Aviso } from "@/components/Aviso";
 import { BotonPrimario } from "@/components/Boton";
 import { CampoSelect, CampoTexto } from "@/components/Campo";
+import { OPCIONES_ORIENTACION, OPCIONES_TAMANO_HOJA } from "@/lib/documentos/opciones";
+import type { ClaveTamanoHoja, OrientacionHoja } from "@/lib/documentos/pagina";
 import type { Formato, Sistema } from "@/lib/tipos";
 import { crearFormatoRag, type DatosFormatoRagNuevo } from "./actions";
 
@@ -45,6 +47,8 @@ export function ConstructorFormatoRag({ sistemas, formatos }: Props) {
   const [instruccionesTexto, setInstruccionesTexto] = useState("");
   const [ubicacion, setUbicacion] = useState(true);
   const [referencia, setReferencia] = useState(true);
+  const [tamanoHoja, setTamanoHoja] = useState<ClaveTamanoHoja>("a4");
+  const [orientacion, setOrientacion] = useState<OrientacionHoja>("vertical");
   const [estado, setEstado] = useState<Estado>({ fase: "editando" });
 
   if (disponibles.length === 0) {
@@ -75,6 +79,8 @@ export function ConstructorFormatoRag({ sistemas, formatos }: Props) {
           .map((l) => l.trim())
           .filter(Boolean),
         columnas: { ubicacion, referencia },
+        tamano_hoja: tamanoHoja,
+        orientacion,
       };
       const { sistemaClave } = await crearFormatoRag(datos);
       router.push(`/sistemas/${sistemaClave}`);
@@ -104,6 +110,20 @@ export function ConstructorFormatoRag({ sistemas, formatos }: Props) {
         <CampoTexto etiqueta="Periodicidad" valor={periodicidad} onChange={setPeriodicidad} placeholder="mensual" />
         <CampoTexto etiqueta="Documento de referencia" valor={documentoReferencia} onChange={setDocumentoReferencia} requerido />
         <CampoTexto etiqueta="Revisión" valor={revision} onChange={setRevision} />
+        <CampoSelect
+          etiqueta="Tamaño de hoja"
+          valor={tamanoHoja}
+          onChange={(v) => setTamanoHoja(v as ClaveTamanoHoja)}
+          opciones={OPCIONES_TAMANO_HOJA}
+          sinVacio
+        />
+        <CampoSelect
+          etiqueta="Orientación"
+          valor={orientacion}
+          onChange={(v) => setOrientacion(v as OrientacionHoja)}
+          opciones={OPCIONES_ORIENTACION}
+          sinVacio
+        />
       </div>
 
       <div className="mt-3">

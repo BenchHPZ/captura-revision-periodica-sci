@@ -4,10 +4,12 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Aviso } from "@/components/Aviso";
 import { BotonPrimario, BotonSecundario } from "@/components/Boton";
-import { Campo, CampoSelect, CampoTexto } from "@/components/Campo";
+import { Campo, CampoCheckbox, CampoSelect, CampoTexto } from "@/components/Campo";
 import { PanelExito, PanelVistaPrevia } from "@/components/PanelConfirmacion";
 import { createClient } from "@/lib/supabase/client";
-import { DIAS_POR_DEFECTO } from "@/lib/checklist/constantes";
+import { ALTO_FILA_BITACORA_POR_DEFECTO_MM, DIAS_POR_DEFECTO } from "@/lib/checklist/constantes";
+import { OPCIONES_ORIENTACION, OPCIONES_TAMANO_HOJA } from "@/lib/documentos/opciones";
+import type { ClaveTamanoHoja, OrientacionHoja } from "@/lib/documentos/pagina";
 import { DEPOSITO, rutaChecklistRef } from "@/lib/rutas";
 import type { CampoAgrupacionChecklist } from "@/lib/tipos";
 import {
@@ -63,6 +65,10 @@ interface BloqueFila {
   items: ItemFila[];
   columnas: ColumnaFila[];
   filasBlanco: number;
+  altoFilaMM: number;
+  /** Ver docs/decisiones.md D-25. El primer bloque siempre empieza hoja,
+   * así que su valor no tiene efecto (la casilla se deshabilita ahí). */
+  hojaPropia: boolean;
 }
 
 type Estado =
@@ -100,6 +106,8 @@ function crearBloque(tipo: TipoBloqueChecklist): BloqueFila {
     items: [],
     columnas: [],
     filasBlanco: 10,
+    altoFilaMM: ALTO_FILA_BITACORA_POR_DEFECTO_MM,
+    hojaPropia: true,
   };
 }
 
@@ -157,6 +165,8 @@ function bloqueFilaDesdeImportado(b: BloqueChecklistImportado): BloqueFila {
     items: items.map(itemFilaDesdeImportado),
     columnas: (b.columnas ?? []).map((c) => ({ key: nuevaClave(), id: c.id, etiqueta: c.etiqueta })),
     filasBlanco: b.filas_blanco ?? 10,
+    altoFilaMM: b.alto_fila_mm ?? ALTO_FILA_BITACORA_POR_DEFECTO_MM,
+    hojaPropia: b.hoja_propia ?? true,
   };
 }
 
@@ -190,6 +200,10 @@ export function ConstructorChecklist({ inicial }: Props) {
   const [revision, setRevision] = useState(inicial?.datos.formato.revision ?? "");
   const [instruccionesTexto, setInstruccionesTexto] = useState((inicial?.datos.formato.instrucciones ?? []).join("\n"));
   const [columnasFecha, setColumnasFecha] = useState(String(inicial?.datos.formato.columnas_fecha ?? DIAS_POR_DEFECTO));
+  const [tamanoHoja, setTamanoHoja] = useState<ClaveTamanoHoja>(inicial?.datos.formato.tamano_hoja ?? "a4");
+  // Un checklist trae muchas columnas de fecha: horizontal es lo que tiene
+  // sentido por defecto, aunque el estándar de tamaño sea A4.
+  const [orientacion, setOrientacion] = useState<OrientacionHoja>(inicial?.datos.formato.orientacion ?? "apaisada");
   const [bloques, setBloques] = useState<BloqueFila[]>(() =>
     inicial ? [...inicial.datos.bloques].sort((a, b) => a.orden - b.orden).map(bloqueFilaDesdeImportado) : [],
   );
@@ -251,15 +265,17 @@ export function ConstructorChecklist({ inicial }: Props) {
     }
     if (bloques.length === 0) return "Agrega al menos un bloque.";
     if (bloques.some((b) => !b.nombre.trim())) return "Todos los bloques necesitan un nombre.";
-    const portadas = bloques.filter((b) => b.tipo === "portada_fotos").length;
-    const bitacoras = bloques.filter((b) => b.tipo === "bitacora_libre").length;
-    if (portadas > 1) return "Sólo puede haber un bloque de portada de fotos (el resto no se imprime).";
-    if (bitacoras > 1) return "Sólo puede haber un bloque de bitácora libre (el resto no se imprime).";
     for (const b of bloques) {
       if (b.tipo === "bitacora_libre") {
         if (b.columnas.length === 0) return `'${b.nombre}': agrega al menos una columna.`;
         if (b.columnas.some((c) => !c.id.trim() || !c.etiqueta.trim())) {
           return `'${b.nombre}': cada columna necesita identificador y etiqueta.`;
+        }
+        if (!Number.isInteger(b.filasBlanco) || b.filasBlanco < 1) {
+          return `'${b.nombre}': "Filas en blanco" debe ser un entero mayor a 0.`;
+        }
+        if (!Number.isInteger(b.altoFilaMM) || b.altoFilaMM < 1 || b.altoFilaMM > 60) {
+          return `'${b.nombre}': "Alto de cada renglón" debe ser un entero entre 1 y 60 mm.`;
         }
       } else if (b.items.some((it) => !it.nombre.trim())) {
         return `'${b.nombre}': todos los ítems necesitan un nombre.`;
@@ -281,11 +297,16 @@ export function ConstructorChecklist({ inicial }: Props) {
           .map((l) => l.trim())
           .filter(Boolean),
         columnas_fecha: Number(columnasFecha),
+        tamano_hoja: tamanoHoja,
+        orientacion,
       },
       bloques: bloques.map((b, i) => ({
         tipo: b.tipo,
         nombre: b.nombre.trim(),
         orden: i + 1,
+        // El primero siempre abre hoja: no hay hoja anterior a la cual
+        // unirse (ver web/lib/checklist/paginas.ts).
+        hoja_propia: i === 0 ? true : b.hojaPropia,
         agrupacion:
           b.agrupacionExterna === ""
             ? []
@@ -310,6 +331,7 @@ export function ConstructorChecklist({ inicial }: Props) {
               })),
         columnas: b.tipo === "bitacora_libre" ? b.columnas.map((c) => ({ id: c.id.trim(), etiqueta: c.etiqueta.trim() })) : undefined,
         filas_blanco: b.tipo === "bitacora_libre" ? b.filasBlanco : undefined,
+        alto_fila_mm: b.tipo === "bitacora_libre" ? b.altoFilaMM : undefined,
       })),
     };
   }
@@ -399,7 +421,25 @@ export function ConstructorChecklist({ inicial }: Props) {
           <CampoTexto etiqueta="Documento de referencia" valor={documentoReferencia} onChange={setDocumentoReferencia} requerido />
           <CampoTexto etiqueta="Revisión" valor={revision} onChange={setRevision} />
           <CampoTexto etiqueta="Columnas de fecha (días a llenar)" valor={columnasFecha} onChange={setColumnasFecha} />
+          <CampoSelect
+            etiqueta="Tamaño de hoja"
+            valor={tamanoHoja}
+            onChange={(v) => setTamanoHoja(v as ClaveTamanoHoja)}
+            opciones={OPCIONES_TAMANO_HOJA}
+            sinVacio
+          />
+          <CampoSelect
+            etiqueta="Orientación"
+            valor={orientacion}
+            onChange={(v) => setOrientacion(v as OrientacionHoja)}
+            opciones={OPCIONES_ORIENTACION}
+            sinVacio
+          />
         </div>
+        <p className="mt-2 text-xs text-vw-dsb-60">
+          El tamaño y la orientación aplican a todo el documento por igual. De ellos depende cuántas columnas de fecha caben por
+          hoja: si no caben todas, el documento se reparte en varias hojas.
+        </p>
         <div className="mt-3">
           <span className="block text-xs text-vw-dsb-60">Instrucciones propias de este checklist (una por línea)</span>
           <textarea
@@ -561,6 +601,25 @@ function FilaBloque({
         <BotonSecundario onClick={onQuitar}>Quitar bloque</BotonSecundario>
       </div>
 
+      <div className="mt-2">
+        <CampoCheckbox
+          etiqueta="Empieza en hoja nueva"
+          valor={esPrimero ? true : bloque.hojaPropia}
+          deshabilitado={esPrimero}
+          onChange={(v) => onCambiar({ hojaPropia: v })}
+          ayuda={
+            esPrimero
+              ? "El primer bloque siempre empieza hoja: no hay ninguna anterior a la cual unirse."
+              : bloque.hojaPropia
+                ? "Desmárcalo para que continúe en la hoja del bloque anterior y el documento gaste menos papel."
+                : "Continúa en la hoja del bloque anterior; sólo se parte donde caiga el salto natural de la hoja. Si este bloque se derrama a la hoja siguiente y comparte hoja con bloques de otro tipo, esa hoja no repite su fila de encabezados de columna."
+          }
+        />
+      </div>
+
+      {/* El nombre del bloque no se imprime: una hoja puede traer varios y
+          el encabezado es de la hoja, no del bloque (D-25). */}
+
       {esTabla && (
         <div className="mt-2 flex flex-wrap gap-3">
           <CampoSelect
@@ -580,14 +639,22 @@ function FilaBloque({
 
       {bloque.tipo === "bitacora_libre" ? (
         <div className="mt-3">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-end gap-3">
             <p className="text-xs font-medium text-vw-deep-space">Columnas fijas</p>
             <CampoTexto
               etiqueta="Filas en blanco"
               valor={String(bloque.filasBlanco)}
               onChange={(v) => onCambiar({ filasBlanco: Number(v) || 0 })}
             />
+            <CampoTexto
+              etiqueta="Alto de cada renglón (mm)"
+              valor={String(bloque.altoFilaMM)}
+              onChange={(v) => onCambiar({ altoFilaMM: Number(v) || 0 })}
+            />
           </div>
+          <p className="mt-1 text-xs text-vw-dsb-60">
+            El alto es el espacio que queda para escribir a mano en cada renglón. 8 mm es cómodo para una línea de texto.
+          </p>
           <div className="mt-2 space-y-1.5">
             {bloque.columnas.map((c) => (
               <div key={c.key} className="flex flex-wrap items-end gap-2">

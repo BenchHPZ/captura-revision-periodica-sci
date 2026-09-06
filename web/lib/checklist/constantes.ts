@@ -26,3 +26,8 @@ export const CIERRE_COLUMNA_CHECKLIST = {
  * ciclo abierto del que derivar los días del mes (ver documento.ts). Un
  * mes de 31 días cubre cualquier caso real sin quedar corto. */
 export const DIAS_POR_DEFECTO = 31;
+
+/** Alto de cada renglón en blanco de una bitácora, cuando el bloque no lo
+ * trae. Cercano al de la fila de cierre (.chk-celda-cierre, 9mm), que sí
+ * estaba dimensionada para escribir encima. Ver docs/decisiones.md D-25. */
+export const ALTO_FILA_BITACORA_POR_DEFECTO_MM = 8;

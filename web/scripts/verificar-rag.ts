@@ -21,7 +21,12 @@
 import { armarDocumentoRAG, type EntradaDocumentoRAG } from "../lib/rag/documento";
 import { columnasDe } from "../lib/rag/columnas";
 import { renderizarCuerpoRAG } from "../lib/rag/render";
+import { presupuestoColumnasMM, type ConfiguracionPagina } from "../lib/documentos/pagina";
 import type { Formato, PuntoDef, TipoDiccionario } from "../lib/tipos";
+
+/** La hoja con la que se venía imprimiendo el RAG antes de que fuera
+ * configurable (D-25): sirve de referencia de no regresión. */
+const CARTA_VERTICAL: ConfiguracionPagina = { tamano: "carta", orientacion: "vertical", margenMM: 8 };
 
 let fallas = 0;
 
@@ -49,6 +54,8 @@ function formato(overrides: Partial<Formato> = {}): Formato {
     columnas: { ubicacion: true, referencia: true },
     activo: true,
     columnas_fecha: 31,
+    tamano_hoja: "carta",
+    orientacion: "vertical",
     ...overrides,
   };
 }
@@ -78,11 +85,16 @@ function contarEnHTML(html: string, regex: RegExp): number {
 function verificarCaso(titulo: string, entrada: EntradaDocumentoRAG, zonasEsperadas: string[]) {
   console.log(`\n${titulo}`);
   const doc = armarDocumentoRAG(entrada);
-  const columnas = columnasDe(doc);
-  const html = renderizarCuerpoRAG(doc);
+  const columnas = columnasDe(doc, CARTA_VERTICAL);
+  const html = renderizarCuerpoRAG(doc, CARTA_VERTICAL);
+
+  // Una sola tabla de hoja para todo el documento: su thead es el membrete
+  // y su tfoot el pie de firmas, repetidos por página. Ver D-25.
+  const hojas = [...html.matchAll(/<table class="rag-hoja">/g)];
+  verificar(`produce exactamente 1 tabla de hoja`, hojas.length === 1, `encontradas: ${hojas.length}`);
 
   const tablas = [...html.matchAll(/<table class="rag-tabla">([\s\S]*?)<\/table>/g)];
-  verificar(`produce ${zonasEsperadas.length || 1} tabla(s) (${tablas.length} encontradas)`, tablas.length === (zonasEsperadas.length || 1));
+  verificar(`produce ${zonasEsperadas.length || 1} tabla(s) de zona (${tablas.length} encontradas)`, tablas.length === (zonasEsperadas.length || 1));
 
   for (const [, cuerpo] of tablas) {
     const colCount = contarEnHTML(cuerpo!, /<col style=/g);
@@ -94,8 +106,8 @@ function verificarCaso(titulo: string, entrada: EntradaDocumentoRAG, zonasEspera
     verificar(`columnasDe().length (${columnas.length}) === <col> en el colgroup (${colCount})`, columnas.length === colCount);
     verificar(`columnasDe().length (${columnas.length}) === <th> del encabezado (${thCount})`, columnas.length === thCount);
     verificar(
-      `todos los colspan usan el mismo número (${columnas.length})`,
-      colspansDistintos.length === 1 && colspansDistintos[0] === columnas.length,
+      `todos los colspan de la tabla de zona usan el mismo número (${columnas.length})`,
+      colspansDistintos.length <= 1 && (colspansDistintos.length === 0 || colspansDistintos[0] === columnas.length),
       `colspans encontrados: ${colspansDistintos.join(", ")}`,
     );
 
@@ -109,6 +121,29 @@ function verificarCaso(titulo: string, entrada: EntradaDocumentoRAG, zonasEspera
       `conteos encontrados: ${tdDistintos.join(", ")}`,
     );
   }
+
+  // El ancho de la tabla de hoja debe cuadrar con el de las de zona: si no,
+  // las columnas de zona no caerían dentro del marco del membrete.
+  const anchoHoja = Number(html.match(/<table class="rag-hoja">\s*<colgroup><col style="width:([\d.]+)mm">/)?.[1] ?? 0);
+  const anchoColumnas = columnas.reduce((s, c) => s + c.anchoMM, 0);
+  verificar(`el ancho de la tabla de hoja (${anchoHoja}mm) === suma de columnas (${anchoColumnas}mm)`, anchoHoja === anchoColumnas);
+  verificar(
+    `el ancho cabe en el presupuesto de la hoja (${presupuestoColumnasMM(CARTA_VERTICAL, 0)}mm)`,
+    anchoColumnas <= presupuestoColumnasMM(CARTA_VERTICAL, 0),
+  );
+
+  // Las instrucciones se imprimen una sola vez, en el cuerpo — no en el
+  // thead, donde se repetirían en cada hoja (D-25).
+  const vecesInstrucciones = contarEnHTML(html, /<ol class="rag-instrucciones">/g);
+  verificar(
+    `las instrucciones se imprimen a lo más una vez (${vecesInstrucciones})`,
+    vecesInstrucciones <= 1,
+  );
+
+  // El membrete y el pie salen una sola vez en el HTML: es el navegador
+  // quien los repite por página, desde thead/tfoot.
+  verificar(`el membrete aparece una sola vez en el HTML`, contarEnHTML(html, /<tr class="rag-franja-superior">/g) === 1);
+  verificar(`el pie aparece una sola vez en el HTML`, contarEnHTML(html, /<tr class="rag-franja-pie">/g) === 1);
 
   // El banner de zona vive en el <thead> de la tabla de SU zona (D-24) —
   // debe aparecer exactamente una vez por zona esperada, en el orden dado.

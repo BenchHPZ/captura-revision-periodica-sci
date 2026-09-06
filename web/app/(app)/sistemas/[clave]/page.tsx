@@ -12,8 +12,8 @@ import {
 } from "@/lib/datos";
 import { Aviso } from "@/components/Aviso";
 import { armarDocumentoRAG } from "@/lib/rag/documento";
-import { ESTILOS_RAG } from "@/lib/rag/estilos";
-import { renderizarCuerpoRAG, renderizarDocumentoCompleto } from "@/lib/rag/render";
+import { paginaDeFormato } from "@/lib/documentos/pagina";
+import { renderizarRag } from "@/lib/rag/render";
 import type { PuntoDef } from "@/lib/tipos";
 import { ElementosCatalogo } from "./ElementosCatalogo";
 import { FormatoEditor } from "./FormatoEditor";
@@ -59,6 +59,7 @@ export default async function SistemaPage({
 
   let htmlCuerpo = "";
   let htmlCompleto = "";
+  let estilosDocumento = "";
   let modo: "vacio" | "lleno" = "vacio";
   if (formato) {
     const filas = await obtenerElementosParaRag(supabase, ciclo.id, sistema.id);
@@ -94,8 +95,12 @@ export default async function SistemaPage({
       cicloNombre: ciclo.nombre,
     });
 
-    htmlCuerpo = renderizarCuerpoRAG(documento);
-    htmlCompleto = renderizarDocumentoCompleto(documento);
+    // Cuerpo, estilos y documento completo salen de la misma hoja — ver
+    // docs/decisiones.md D-25.
+    const renderizado = renderizarRag(documento, paginaDeFormato(formato));
+    htmlCuerpo = renderizado.cuerpo;
+    htmlCompleto = renderizado.completo;
+    estilosDocumento = renderizado.estilos;
   }
 
   return (
@@ -148,7 +153,7 @@ export default async function SistemaPage({
               </div>
             )}
             <FormatoEditor formato={formato} />
-            <style dangerouslySetInnerHTML={{ __html: ESTILOS_RAG }} />
+            <style dangerouslySetInnerHTML={{ __html: estilosDocumento }} />
             <VisorRAG
               html={htmlCuerpo}
               htmlCompleto={htmlCompleto}

@@ -4,10 +4,11 @@
 // generador local que escriba un .html a disco más adelante (ver
 // docs/decisiones.md D-16). No debe importar "server-only", "next/*" ni
 // "react" — ver la prueba de pureza en la verificación del cambio.
+import { PAGINA_POR_DEFECTO, type ConfiguracionPagina } from "../documentos/pagina";
 import type { PuntoDef, TipoPunto, ValorPunto } from "../tipos";
 import { columnasDe, type ColumnaRAG } from "./columnas";
 import { LOGO_VW_SVG } from "./constantes";
-import { ESTILOS_RAG } from "./estilos";
+import { estilosRag } from "./estilos";
 import type { CierreFormato, DocumentoRAG, ModoDocumentoRAG, RenglonRAG } from "./tipos";
 
 function escapeHtml(valor: string): string {
@@ -26,10 +27,13 @@ function esPuntoRespuesta(tipo: TipoPunto): boolean {
   return tipo === "si_no" || tipo === "si_no_na";
 }
 
-function formatearFecha(iso: string): string {
+/** Mes y año, sin día ni hora: el encabezado se repite en cada hoja y la
+ * hora exacta de generación no le decía nada a nadie. Mismo formato que en
+ * checklist. Ver docs/decisiones.md D-25. */
+function formatearMesAno(iso: string): string {
   const fecha = new Date(iso);
   if (Number.isNaN(fecha.getTime())) return iso;
-  return fecha.toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" });
+  return fecha.toLocaleDateString("es-MX", { month: "short", year: "numeric" });
 }
 
 /** Normaliza la respuesta a su etiqueta impresa. Los puntos nuevos se
@@ -127,17 +131,13 @@ function renderizarFilaCierrePie(cierre: CierreFormato, totalCols: number): stri
  * instrucciones sólo se muestran en la PRIMERA tabla del documento,
  * mismo criterio que ya usaba checklist (renderizarEncabezadoGeneral en
  * web/lib/checklist/render.ts) — ver docs/decisiones.md D-24. */
-function renderizarEncabezadoGeneralRAG(doc: DocumentoRAG, totalCols: number, conInstrucciones: boolean): string {
+function renderizarEncabezadoGeneralRAG(doc: DocumentoRAG): string {
   const metaCiclo = doc.cicloNombre ? `${escapeHtml(doc.cicloNombre)} · ` : "";
   const metaModo = doc.modo === "vacio" ? "Formato en blanco" : "Con lo capturado";
-  const instrucciones =
-    conInstrucciones && doc.instrucciones.length > 0
-      ? `<tr class="rag-instrucciones-fila"><td colspan="${totalCols}"><ol class="rag-instrucciones">${doc.instrucciones.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ol></td></tr>`
-      : "";
 
   return `
     <tr class="rag-franja-superior">
-      <td colspan="${totalCols}">
+      <td>
         <div class="rag-encabezado-linea">
           ${doc.encabezado.clasificacion ? `<span class="rag-clasificacion">${escapeHtml(doc.encabezado.clasificacion)}</span>` : "<span></span>"}
           <span class="rag-logo">${LOGO_VW_SVG}</span>
@@ -146,12 +146,11 @@ function renderizarEncabezadoGeneralRAG(doc: DocumentoRAG, totalCols: number, co
       </td>
     </tr>
     <tr class="rag-titulo-fila">
-      <td colspan="${totalCols}">
+      <td>
         <div class="rag-titulo">${escapeHtml(doc.nombre)}</div>
-        <div class="rag-meta">${metaCiclo}Generado ${formatearFecha(doc.generado)} · ${metaModo} · ${doc.totalRenglones} elemento${doc.totalRenglones === 1 ? "" : "s"}</div>
+        <div class="rag-meta">${metaCiclo}Impreso: ${formatearMesAno(doc.generado)} · ${metaModo} · ${doc.totalRenglones} elemento${doc.totalRenglones === 1 ? "" : "s"}</div>
       </td>
-    </tr>
-    ${instrucciones}`;
+    </tr>`;
 }
 
 /** Una zona sin nombre (documento sin elementos, caso límite) — para que
@@ -166,32 +165,30 @@ interface SeccionParaImprimir {
 
 /**
  * El cuerpo semántico del documento — sin `<style>`, sin `<html>`. Para
- * incrustarse dentro de una página que ya controla su propio `<head>`
- * (la vista de la app inyecta ESTILOS_RAG aparte, una sola vez).
+ * incrustarse dentro de una página que ya controla su propio `<head>`.
  *
- * Una `<table>` POR ZONA, no una sola para todo el documento: antes el
- * banner de zona (`rag-seccion`) era un `<tr>` cualquiera dentro de
- * `<tbody>`, así que si una zona con muchos renglones se repartía entre
- * varias páginas impresas, el banner sólo aparecía en la primera — los
- * navegadores sólo repiten nativamente `<thead>`/`<tfoot>` al paginar, no
- * un renglón de en medio (ver docs/decisiones.md D-16 y D-24). Ahora el
- * banner vive dentro del `<thead>` de la tabla de SU zona, así que se
- * repite igual que el resto del encabezado en cualquier página que esa
- * zona llegue a ocupar. Sin salto de página forzado entre zonas — cada
- * tabla sigue mostrando su propio `<tfoot>` en cualquier página que
- * toque, así que ninguna página se queda sin firma aunque comparta
- * página con la zona siguiente (verificado contra el PDF real de la
- * ambulancia, ver D-24). `columnasDe(doc)` no varía por zona, así que el
- * `colgroup` es idéntico en cada tabla, sólo repetido.
+ * Estructura en dos niveles (la misma que checklist, ver
+ * docs/decisiones.md D-25): una `<table class="rag-hoja">` externa de una
+ * sola columna, cuyo `<thead>` es el encabezado de página y cuyo `<tfoot>`
+ * es el pie con las firmas — el navegador los repite una vez por hoja
+ * impresa. Dentro, en una sola celda, una `<table class="rag-tabla">` por
+ * zona, cada una con su banner y sus encabezados de columna en su propio
+ * `<thead>`, que también se repiten cuando la zona cruza de página.
+ *
+ * Antes cada zona era una tabla suelta con el encabezado general COMPLETO
+ * repetido en su `<thead>` (D-24): cuando dos zonas compartían hoja, el
+ * membrete salía dos veces en la misma página. Anidar lo resuelve sin
+ * perder la repetición del banner.
  */
-export function renderizarCuerpoRAG(doc: DocumentoRAG): string {
-  const columnas = columnasDe(doc);
+export function renderizarCuerpoRAG(doc: DocumentoRAG, pagina: ConfiguracionPagina = PAGINA_POR_DEFECTO): string {
+  const columnas = columnasDe(doc, pagina);
   // Antes este número se calculaba aparte (4 + puntos.length + 1) y podía
   // desincronizarse del resto — ver docs/decisiones.md D-19. Ahora es
   // literalmente cuántas columnas se armaron.
   const totalCols = columnas.length;
   const puntosPorId = new Map(doc.puntos.map((p) => [p.id, p]));
 
+  const anchoTotalMM = columnas.reduce((suma, c) => suma + c.anchoMM, 0);
   const colgroup = columnas.map((c) => `<col style="width:${c.anchoMM}mm">`).join("");
 
   // La etiqueta va en vertical para que la columna de un punto SI/NO
@@ -212,8 +209,7 @@ export function renderizarCuerpoRAG(doc: DocumentoRAG): string {
   const secciones: SeccionParaImprimir[] = doc.secciones.length > 0 ? doc.secciones : [{ nombre: null, renglones: [] }];
 
   const tablas = secciones
-    .map((seccion, indice) => {
-      const primeraTabla = indice === 0;
+    .map((seccion) => {
       const banner =
         seccion.nombre !== null ? `<tr class="rag-seccion"><th colspan="${totalCols}">${escapeHtml(seccion.nombre)}</th></tr>` : "";
       const filas = seccion.renglones.map((r) => renderizarRenglon(r, columnas, puntosPorId, doc.modo)).join("");
@@ -224,7 +220,6 @@ export function renderizarCuerpoRAG(doc: DocumentoRAG): string {
     ${colgroup}
   </colgroup>
   <thead>
-    ${renderizarEncabezadoGeneralRAG(doc, totalCols, primeraTabla)}
     ${banner}
     <tr class="rag-encabezado-principal">
       ${encabezados}
@@ -233,22 +228,38 @@ export function renderizarCuerpoRAG(doc: DocumentoRAG): string {
   <tbody>
     ${filas}
   </tbody>
+</table>`;
+    })
+    .join("");
+
+  // Las instrucciones van en el cuerpo, no en el <thead>: ahí se
+  // repetirían en cada hoja, y lo que debe repetirse por hoja es sólo el
+  // membrete y el pie de firmas (ver docs/decisiones.md D-25).
+  const instrucciones =
+    doc.instrucciones.length > 0
+      ? `<ol class="rag-instrucciones">${doc.instrucciones.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ol>`
+      : "";
+
+  return `
+<div class="rag-doc">
+<table class="rag-hoja">
+  <colgroup><col style="width:${anchoTotalMM}mm"></colgroup>
+  <thead>
+    ${renderizarEncabezadoGeneralRAG(doc)}
+  </thead>
   <tfoot>
-    ${doc.cierre.repetir ? renderizarFilaCierrePie(doc.cierre, totalCols) : ""}
+    ${doc.cierre.repetir ? renderizarFilaCierrePie(doc.cierre, 1) : ""}
     <tr class="rag-franja-pie">
-      <td colspan="${totalCols}">
+      <td>
         ${escapeHtml(doc.encabezado.razon_social)} — ${domicilio} · ${escapeHtml(doc.clave)}
         ${escapeHtml(doc.encabezado.documento_referencia)}${revision}
       </td>
     </tr>
   </tfoot>
-</table>`;
-    })
-    .join("");
-
-  return `
-<div class="rag-doc">
-  ${tablas}
+  <tbody>
+    <tr><td class="rag-hoja-celda">${instrucciones}${tablas}</td></tr>
+  </tbody>
+</table>
   ${!doc.cierre.repetir ? `<div class="rag-cierre-final">${renderizarBloqueCierre(doc.cierre)}</div>` : ""}
 </div>`;
 }
@@ -257,17 +268,35 @@ export function renderizarCuerpoRAG(doc: DocumentoRAG): string {
  * lo que usa "Imprimir" — una ventana nueva sin el resto de los estilos
  * de la app de por medio (ver docs/decisiones.md D-16 §7.5). Su
  * `<title>` es el nombre que Chrome/Edge sugieren al "Guardar como PDF". */
-export function renderizarDocumentoCompleto(doc: DocumentoRAG): string {
+export function renderizarDocumentoCompleto(doc: DocumentoRAG, pagina: ConfiguracionPagina = PAGINA_POR_DEFECTO): string {
   const titulo = `${doc.clave} — ${doc.cicloNombre ?? doc.periodicidad}`;
   return `<!doctype html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
 <title>${escapeHtml(titulo)}</title>
-<style>${ESTILOS_RAG}</style>
+<style>${estilosRag(pagina)}</style>
 </head>
 <body>
-${renderizarCuerpoRAG(doc)}
+${renderizarCuerpoRAG(doc, pagina)}
 </body>
 </html>`;
+}
+
+export interface DocumentoRenderizadoRAG {
+  cuerpo: string;
+  estilos: string;
+  completo: string;
+}
+
+/** Una sola entrada para quien renderiza: cuerpo, estilos y documento
+ * completo salen de la MISMA ConfiguracionPagina — antes la página pedía
+ * las tres cosas por separado y podía inyectar un <style> calculado con
+ * una hoja distinta de la del cuerpo. */
+export function renderizarRag(doc: DocumentoRAG, pagina: ConfiguracionPagina): DocumentoRenderizadoRAG {
+  return {
+    cuerpo: renderizarCuerpoRAG(doc, pagina),
+    estilos: estilosRag(pagina),
+    completo: renderizarDocumentoCompleto(doc, pagina),
+  };
 }

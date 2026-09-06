@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { DEPOSITO, obtenerElementosParaImpacto, type ElementoParaImpacto } from "@/lib/datos";
 import { calcularEstado } from "@/lib/estado";
+import type { ClaveTamanoHoja, OrientacionHoja } from "@/lib/documentos/pagina";
 import { rutaFoto } from "@/lib/rutas";
 import type { Elemento, Plantilla } from "@/lib/tipos";
 
@@ -204,6 +205,9 @@ export interface DatosFormatoEditable {
   revision: string | null;
   instrucciones: string[];
   columnas: { ubicacion: boolean; referencia: boolean };
+  /** Ver docs/decisiones.md D-25. */
+  tamano_hoja: ClaveTamanoHoja;
+  orientacion: OrientacionHoja;
 }
 
 export async function guardarFormato(formatoId: string, datos: DatosFormatoEditable): Promise<void> {

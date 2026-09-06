@@ -235,6 +235,8 @@ así no hay manera de que un formato del mismo tipo lo traiga distinto a los dem
 | `columnas` | jsonb | no | `{ubicacion, referencia}` — qué columnas opcionales lleva un documento `'rag'`. Sin significado para `'checklist'`. Ver docs/decisiones.md D-19 |
 | `activo` | boolean | no | Baja recuperable — default `true`. Mismo patrón que `elementos.activo`/`sistemas.activo`/`zonas.activo` (D-18). Ver docs/decisiones.md D-23 |
 | `columnas_fecha` | smallint | no | Cuántas columnas de fecha imprime un `'checklist'` — default `31`. Sin significado para `'rag'`. Antes se derivaba del ciclo abierto en tiempo de solicitud; ahora es explícito y propio de cada formato. Ver docs/decisiones.md D-23 |
+| `tamano_hoja` | text | no | `'a4'` (default) · `'carta'` · `'oficio'`. Junto con `orientacion` decide el `@page` del CSS **y** el presupuesto en milímetros con el que se reparten las columnas — una sola fuente, `web/lib/documentos/pagina.ts`, para que no puedan desincronizarse. Ver docs/decisiones.md D-25 |
+| `orientacion` | text | no | `'vertical'` (default) · `'apaisada'`. Aplica a todo el documento por igual, no por sección |
 | `creado` | timestamptz | no | Alta del formato |
 | `actualizado` | timestamptz | no | Última modificación |
 
@@ -267,9 +269,11 @@ libres sin fechas. Ver docs/decisiones.md D-22.
 | `formato_id` | uuid | no | Referencia a `formatos`, `on delete cascade` |
 | `tipo` | text | no | `portada_fotos`, `tabla_verificacion`, `tabla_simple` o `bitacora_libre` — decide cómo se interpretan sus `checklist_items` (§2.11) y cómo se renderiza (`web/lib/checklist/render.ts`) |
 | `nombre` | text | no | Título del bloque, p. ej. `Equipo`, `Mecánico`, `Bitácora de insumos` |
-| `orden` | smallint | no | Orden de aparición dentro del documento |
+| `orden` | smallint | no | Orden de aparición dentro del documento. Se respeta tal cual al imprimir: antes el renderizador reordenaba por tipo (portada → tablas → bitácora), lo que hacía imposible elegir qué bloques comparten hoja. Ver docs/decisiones.md D-25 |
+| `hoja_propia` | boolean | no | `true` (default): el bloque empieza en hoja nueva. `false`: continúa en la hoja del bloque anterior y sólo se parte donde caiga el salto natural del papel. Se ignora en el primer bloque (no hay hoja anterior a la cual unirse). Ver docs/decisiones.md D-25 |
 | `columnas` | jsonb | no | Sólo `bitacora_libre`: `[{id, etiqueta}]` de sus columnas fijas. Vacío en los demás tipos |
-| `filas_blanco` | smallint | sí | Sólo `bitacora_libre`: cuántas filas en blanco imprimir. Nulo en los demás tipos |
+| `filas_blanco` | smallint | sí | Sólo `bitacora_libre`: cuántas filas en blanco imprimir. Nulo en los demás tipos. CHECK `> 0` |
+| `alto_fila_mm` | smallint | no | Sólo `bitacora_libre`: alto en milímetros de cada fila en blanco, para que se pueda escribir a mano encima — default `8`, CHECK entre 1 y 60. Antes no existía y las filas quedaban de ~2.5mm. Ver docs/decisiones.md D-25 |
 | `agrupacion` | jsonb | no | Sólo `tabla_verificacion`/`tabla_simple`: arreglo de 0 a 2 elementos de `{"categoria","ubicacion_fisica"}` que decide cómo se anidan los banners de sección — `[]` = sin banners (plano), un elemento = un nivel, dos = anidado (el primero es el banner externo). Default `["ubicacion_fisica","categoria"]`. Vive en el bloque, no en el formato, porque cada bloque de un mismo checklist puede necesitar un orden distinto. Ver docs/decisiones.md D-22 |
 | `creado` | timestamptz | no | Alta del bloque |
 | `actualizado` | timestamptz | no | Última modificación |
@@ -296,7 +300,9 @@ verificaciones, o una "Descripción" del sub-checklist mecánico.
 No hay tabla de "capturas" para un checklist: se imprime en blanco y punto, sin equivalente a
 `registros`/`valores` — las celdas de fecha quedan en blanco para llenarse a mano. Cuántas columnas de
 fecha imprime es explícito por formato (`formatos.columnas_fecha`, §2.8), no derivado del ciclo abierto
-— ver docs/decisiones.md D-23.
+— ver docs/decisiones.md D-23. Si no caben todas a lo ancho de la hoja configurada
+(`formatos.tamano_hoja`/`orientacion`, §2.8) se reparten en varias hojas, cada una con el rango de
+fechas que le toca — ver docs/decisiones.md D-25.
 
 ---
 
@@ -547,13 +553,16 @@ administra ese panel. Alimenta `formatos` (con `tipo_documento = 'checklist'`), 
     "revision": null,
     "instrucciones": ["Marque el estado en la columna de la fecha en que se realiza la revisión."],
     "notas": null,
-    "columnas_fecha": 31
+    "columnas_fecha": 31,
+    "tamano_hoja": "a4",
+    "orientacion": "apaisada"
   },
   "bloques": [
     { "tipo": "portada_fotos", "nombre": "Identificación de la unidad", "orden": 1,
       "items": [ { "nombre": "Frontal", "foto_referencia_ruta": "checklist-ref/rag-4.1/abc123.jpg" } ] },
 
     { "tipo": "tabla_verificacion", "nombre": "Equipo", "orden": 2,
+      "hoja_propia": false,
       "agrupacion": ["ubicacion_fisica", "categoria"],
       "items": [
         { "categoria": "EQUIPO MEDICO", "ubicacion_fisica": "Compartimento trasero", "pos": "22", "orden": 15,
@@ -566,7 +575,7 @@ administra ese panel. Alimenta `formatos` (con `tipo_documento = 'checklist'`), 
 
     { "tipo": "bitacora_libre", "nombre": "Bitácora de insumos", "orden": 4,
       "columnas": [{ "id": "insumo", "etiqueta": "Insumo utilizado o faltante" }, { "id": "cantidad", "etiqueta": "Cantidad" }],
-      "filas_blanco": 20 }
+      "filas_blanco": 20, "alto_fila_mm": 8 }
   ]
 }
 ```
@@ -574,10 +583,15 @@ administra ese panel. Alimenta `formatos` (con `tipo_documento = 'checklist'`), 
 Campos opcionales de un ítem (`categoria`, `ubicacion_fisica`, `pos`, `cantidad`, `verificaciones`,
 `foto_referencia_ruta`, `orden`, `notas`) se guardan `null`/`[]`/consecutivo si se omiten; `agrupacion`
 se guarda `[]` si se omite (sin banners de sección — ver §2.10 y docs/decisiones.md D-22).
-`bloques[].items` no aplica a `bitacora_libre` (sólo trae `columnas`/`filas_blanco`); `bloques[].columnas`
-y `filas_blanco` no aplican a los demás tipos. `formato.columnas_fecha` es opcional (para no romper un
+`bloques[].items` no aplica a `bitacora_libre` (sólo trae `columnas`/`filas_blanco`/`alto_fila_mm`);
+esos tres no aplican a los demás tipos. `formato.columnas_fecha` es opcional (para no romper un
 JSON escrito antes de esta característica) — ausente se guarda como 31 (`DIAS_POR_DEFECTO`). Ver
 docs/decisiones.md D-23.
+
+También son opcionales `formato.tamano_hoja` (ausente ⇒ `a4`), `formato.orientacion` (ausente ⇒
+`apaisada`, que es lo que tiene sentido para un checklist con muchas columnas de fecha),
+`bloques[].hoja_propia` (ausente ⇒ `true`, el comportamiento de siempre: cada bloque abre hoja) y
+`bloques[].alto_fila_mm` (ausente ⇒ 8). Ver docs/decisiones.md D-25.
 
 La conciliación es por `formato.clave`, igual que §3.5.3, pero **sin diff incremental**: cada import
 hace `upsert` del renglón `formatos` y luego reemplaza POR COMPLETO los `checklist_bloques` de esa
