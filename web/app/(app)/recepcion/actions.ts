@@ -71,7 +71,7 @@ export async function asignarEntrada(cicloId: string, cicloClave: string, formDa
   if (errorEntradas) throw errorEntradas;
   if (!entradas || entradas.length === 0) return;
 
-  const registroId = await aseguraRegistro(supabase, elementoId);
+  const registroId = await aseguraRegistro(supabase, elementoId, cicloId);
 
   const { count } = await supabase
     .from("fotos")

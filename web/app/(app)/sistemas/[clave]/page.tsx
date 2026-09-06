@@ -51,7 +51,7 @@ export default async function SistemaPage({
   const formato = formatosDelSistema.find((f) => f.activo) ?? formatosDelSistema[0] ?? null;
 
   const [elementos, plantilla, zonas] = await Promise.all([
-    obtenerElementosCatalogo(supabase, ciclo.id, sistema.id),
+    obtenerElementosCatalogo(supabase, sistema.id),
     obtenerPlantilla(supabase, ciclo.id, sistema.id),
     obtenerZonas(supabase),
   ]);
@@ -128,7 +128,6 @@ export default async function SistemaPage({
 
       <div className="mt-8">
         <ElementosCatalogo
-          ciclo={{ id: ciclo.id, clave: ciclo.clave }}
           sistema={{ id: sistema.id, clave: sistema.clave }}
           elementosIniciales={elementos}
           zonas={zonas}

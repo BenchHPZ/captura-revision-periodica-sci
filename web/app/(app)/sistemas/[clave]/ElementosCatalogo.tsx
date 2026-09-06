@@ -10,7 +10,6 @@ import type { Elemento, TipoDiccionario, Zona } from "@/lib/tipos";
 import { actualizarElemento, cambiarActivo, crearElemento, type DatosElemento } from "./actions";
 
 interface Props {
-  ciclo: { id: string; clave: string };
   sistema: { id: string; clave: string };
   elementosIniciales: Elemento[];
   zonas: Zona[];
@@ -37,7 +36,7 @@ function contarPalabras(texto: string): number {
 /** Antes 'zona' y 'seccion' eran texto libre — el mismo dato tecleado dos
  * veces (docs/decisiones.md D-18). Ahora 'zona_id' se elige del catálogo
  * único de la planta, y 'tipo' del diccionario del sistema (D-18/D-19). */
-export function ElementosCatalogo({ ciclo, sistema, elementosIniciales, zonas, tipos }: Props) {
+export function ElementosCatalogo({ sistema, elementosIniciales, zonas, tipos }: Props) {
   const [elementos, setElementos] = useState<Elemento[]>(elementosIniciales);
   const [busqueda, setBusqueda] = useState("");
   const [mostrarInactivos, setMostrarInactivos] = useState(false);
@@ -70,7 +69,7 @@ export function ElementosCatalogo({ ciclo, sistema, elementosIniciales, zonas, t
       return;
     }
     try {
-      const nuevo = await crearElemento(ciclo.id, sistema.id, datos);
+      const nuevo = await crearElemento(sistema.id, datos);
       setElementos((prev) => [...prev, nuevo]);
       setAgregando(false);
       setMensaje(null);
@@ -85,7 +84,7 @@ export function ElementosCatalogo({ ciclo, sistema, elementosIniciales, zonas, t
       return;
     }
     try {
-      await actualizarElemento(elemento.id, ciclo.clave, sistema.clave, elemento.codigo, datos);
+      await actualizarElemento(elemento.id, sistema.clave, elemento.codigo, datos);
       setElementos((prev) => prev.map((e) => (e.id === elemento.id ? { ...e, ...datos } : e)));
       setEditandoId(null);
       setMensaje(null);

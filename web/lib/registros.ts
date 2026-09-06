@@ -22,21 +22,24 @@ export async function contarFotosPorMomento(
   return conteo;
 }
 
-/** Da de alta el registro si el elemento todavía no tiene uno; lo deja
- * con todos los campos vacíos (estado sin_iniciar) hasta la primera foto
- * o el primer guardado de texto. */
-export async function aseguraRegistro(supabase: SupabaseClient, elementoId: string): Promise<string> {
+/** Da de alta el registro de ESTE ciclo si el elemento todavía no tiene
+ * uno; lo deja con todos los campos vacíos (estado sin_iniciar) hasta la
+ * primera foto o el primer guardado de texto. Un elemento persiste entre
+ * ciclos (docs/decisiones.md D-26), así que puede tener un registro por
+ * cada ciclo en que se supervisó — cicloId es lo que distingue cuál. */
+export async function aseguraRegistro(supabase: SupabaseClient, elementoId: string, cicloId: string): Promise<string> {
   const { data: existente, error: errorLectura } = await supabase
     .from("registros")
     .select("id")
     .eq("elemento_id", elementoId)
+    .eq("ciclo_id", cicloId)
     .maybeSingle();
   if (errorLectura) throw errorLectura;
   if (existente) return existente.id;
 
   const { data: creado, error: errorAlta } = await supabase
     .from("registros")
-    .insert({ elemento_id: elementoId })
+    .insert({ elemento_id: elementoId, ciclo_id: cicloId })
     .select("id")
     .single();
   if (errorAlta) throw errorAlta;

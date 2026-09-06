@@ -28,7 +28,7 @@ export async function agregarFoto(entrada: EntradaFoto) {
   const supabase = await createClient();
 
   const plantilla = await plantillaDe(supabase, entrada.cicloId, entrada.sistemaId);
-  const registroId = await aseguraRegistro(supabase, entrada.elementoId);
+  const registroId = await aseguraRegistro(supabase, entrada.elementoId, entrada.cicloId);
 
   const { count } = await supabase
     .from("fotos")
@@ -124,7 +124,7 @@ export async function guardarYSiguiente(ids: IdsElemento, formData: FormData) {
     valores[id] = tipo === "si_no" || tipo === "si_no_na" ? decodificarSiNo(valor) : String(valor);
   }
 
-  const registroId = await aseguraRegistro(supabase, ids.elementoId);
+  const registroId = await aseguraRegistro(supabase, ids.elementoId, ids.cicloId);
 
   const { error } = await supabase
     .from("registros")
@@ -154,8 +154,8 @@ export async function guardarYSiguiente(ids: IdsElemento, formData: FormData) {
   const { data: elementosData, error: errorLista } = await supabase
     .from("elementos")
     .select("id, orden, registro:registros(estado)")
-    .eq("ciclo_id", ids.cicloId)
     .eq("sistema_id", ids.sistemaId)
+    .eq("registros.ciclo_id", ids.cicloId)
     .eq("activo", true)
     .order("orden");
   if (errorLista) throw errorLista;

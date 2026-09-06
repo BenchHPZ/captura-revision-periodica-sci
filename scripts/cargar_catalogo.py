@@ -9,20 +9,25 @@ Usa la llave de servicio (SUPABASE_SERVICE_ROLE_KEY), así que se ejecuta
 sólo desde el equipo local, nunca dentro de la aplicación desplegada.
 
 Sin --confirmar sólo valida los archivos y muestra un resumen; no se
-conecta a Supabase. Con --confirmar sí escribe. La conciliación de
-elementos es por (sistema, código): lo que ya existe se actualiza, lo
-nuevo se da de alta, y lo que existía para ese ciclo y sistema pero ya no
-aparece en el archivo se marca activo = false (ver docs/flujos-de-usuario.md
-Flujo 5). Ningún caso borra evidencia ya capturada.
+conecta a Supabase. Con --confirmar sí escribe. 'elementos' es el catálogo
+persistente de la planta (docs/decisiones.md D-26), ya no depende de
+ningún ciclo: la conciliación es por (sistema, código) contra TODO lo que
+ya exista, sin importar en qué ciclo se haya dado de alta originalmente.
+Lo que ya existe se actualiza en su misma fila, lo nuevo se da de alta, y
+lo que ya no aparece en el archivo se marca activo = false (ver
+docs/flujos-de-usuario.md Flujo 5). Ningún caso borra evidencia ya
+capturada — eso vive en 'registros'/'fotos', con su propio ciclo_id.
 
 ADVERTENCIA — el upsert de elementos sobrescribe TODOS sus campos con lo
 que diga este archivo, sin distinguir qué cambió: si alguien corrigió
 'zona'/'seccion'/'ubicacion'/etc. directamente en /catalogo o por SQL
 después de la última vez que se generó este JSON, --confirmar revierte
 esa corrección sin avisar (ya pasó una vez: ver docs/decisiones.md D-18).
-Antes de correr --confirmar sobre un ciclo que ya se capturó, confirmar
-que este archivo es más nuevo que cualquier edición hecha en la
-aplicación, o volver a exportar el catálogo desde /configuracion primero.
+Como el catálogo ya es persistente, esto ya no se limita a "un ciclo
+capturado" — un JSON desactualizado puede pisar una edición hecha en
+CUALQUIER mes. Antes de correr --confirmar, confirmar que este archivo es
+más nuevo que cualquier edición hecha en la aplicación, o volver a
+exportar el catálogo desde /configuracion primero.
 
 Uso:
     python scripts/cargar_catalogo.py --ciclo 2026-08                    # valida y resume, no escribe
@@ -234,7 +239,6 @@ def main() -> int:
 
     filas_elementos = [
         {
-            "ciclo_id": ciclo_id,
             "sistema_id": sistema_id_por_clave[e["sistema"]],
             "codigo": e["codigo"],
             "nombre": e["nombre"],
@@ -256,20 +260,29 @@ def main() -> int:
         }
         for e in catalogo["elementos"]
     ]
-    cliente.table("elementos").upsert(filas_elementos, on_conflict="ciclo_id,sistema_id,codigo").execute()
+    # 'elementos' es el catálogo persistente de la planta (docs/decisiones.md
+    # D-26), ya no depende del ciclo: el conflicto de upsert es sólo
+    # (sistema_id, codigo), así que un elemento que ya existía de un ciclo
+    # anterior se ACTUALIZA en su misma fila en vez de duplicarse.
+    cliente.table("elementos").upsert(filas_elementos, on_conflict="sistema_id,codigo").execute()
     print(f"  Elementos escritos: {len(filas_elementos)}")
     if zonas_desconocidas:
         print(f"  Zonas sin catálogo, quedaron sin zona_id (avisar al área): {sorted(zonas_desconocidas)}")
     if tipos_sin_mapear:
         print(f"  Tipos sin diccionario en su sistema, se guardaron tal cual: {sorted(tipos_sin_mapear)}")
 
+    # Ídem: la desactivación ya no se compara sólo contra "lo que este
+    # mismo script acaba de escribir para este ciclo" (que antes casi
+    # nunca desactivaba nada recién abierto un ciclo) — se compara contra
+    # TODO el catálogo activo, sin importar en qué ciclo se dio de alta
+    # originalmente cada elemento.
     en_archivo = {(e["sistema"], e["codigo"]) for e in catalogo["elementos"]}
-    en_bd = cliente.table("elementos").select("id, codigo, activo, sistema_id").eq("ciclo_id", ciclo_id).execute().data
+    en_bd = cliente.table("elementos").select("id, codigo, activo, sistema_id").eq("activo", True).execute().data
     clave_por_id = {v: k for k, v in sistema_id_por_clave.items()}
     a_desactivar = [
         fila["id"]
         for fila in en_bd
-        if fila["activo"] and (clave_por_id[fila["sistema_id"]], fila["codigo"]) not in en_archivo
+        if (clave_por_id.get(fila["sistema_id"]), fila["codigo"]) not in en_archivo
     ]
     if a_desactivar:
         cliente.table("elementos").update({"activo": False}).in_("id", a_desactivar).execute()

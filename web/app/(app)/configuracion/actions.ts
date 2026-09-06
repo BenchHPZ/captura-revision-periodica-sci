@@ -120,11 +120,10 @@ export interface ResultadoImportacion {
   advertencias: string[];
 }
 
-async function reconciliarCatalogo(
-  cicloId: string,
-  catalogo: CatalogoImportado,
-  aplicar: boolean,
-): Promise<ResultadoImportacion> {
+/** El catálogo ya no cuelga de ningún ciclo (docs/decisiones.md D-26):
+ * conciliar por (sistema, código) alcanza a los elementos persistentes,
+ * sin importar en qué ciclo se hayan capturado sus registros. */
+async function reconciliarCatalogo(catalogo: CatalogoImportado, aplicar: boolean): Promise<ResultadoImportacion> {
   if (!catalogo || !Array.isArray(catalogo.elementos)) {
     throw new Error('El archivo no tiene la forma esperada: falta un arreglo "elementos".');
   }
@@ -155,7 +154,7 @@ async function reconciliarCatalogo(
       continue;
     }
 
-    const actuales = await obtenerElementosCatalogo(supabase, cicloId, sistema.id);
+    const actuales = await obtenerElementosCatalogo(supabase, sistema.id);
     const actualesPorCodigo = new Map(actuales.map((e) => [e.codigo, e]));
     const vistos = new Set<string>();
 
@@ -190,7 +189,7 @@ async function reconciliarCatalogo(
         if (aplicar) {
           const { error } = await supabase
             .from("elementos")
-            .insert({ ciclo_id: cicloId, sistema_id: sistema.id, codigo: importado.codigo, ...campos });
+            .insert({ sistema_id: sistema.id, codigo: importado.codigo, ...campos });
           if (error) throw error;
         }
       }
@@ -216,18 +215,12 @@ async function reconciliarCatalogo(
   return { resumen, advertencias };
 }
 
-export async function previsualizarImportacion(
-  cicloId: string,
-  catalogo: CatalogoImportado,
-): Promise<ResultadoImportacion> {
-  return reconciliarCatalogo(cicloId, catalogo, false);
+export async function previsualizarImportacion(catalogo: CatalogoImportado): Promise<ResultadoImportacion> {
+  return reconciliarCatalogo(catalogo, false);
 }
 
-export async function confirmarImportacion(
-  cicloId: string,
-  catalogo: CatalogoImportado,
-): Promise<ResultadoImportacion> {
-  const resultado = await reconciliarCatalogo(cicloId, catalogo, true);
+export async function confirmarImportacion(catalogo: CatalogoImportado): Promise<ResultadoImportacion> {
+  const resultado = await reconciliarCatalogo(catalogo, true);
   revalidatePath("/", "layout");
   return resultado;
 }

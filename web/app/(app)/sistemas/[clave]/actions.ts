@@ -35,17 +35,12 @@ export interface DatosElemento {
 }
 
 const SELECT_ELEMENTO =
-  "id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion, zona_id, orden_anclado";
+  "id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion, zona_id, orden_anclado";
 
-async function siguienteOrden(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  cicloId: string,
-  sistemaId: string,
-): Promise<number> {
+async function siguienteOrden(supabase: Awaited<ReturnType<typeof createClient>>, sistemaId: string): Promise<number> {
   const { data, error } = await supabase
     .from("elementos")
     .select("orden")
-    .eq("ciclo_id", cicloId)
     .eq("sistema_id", sistemaId)
     .order("orden", { ascending: false })
     .limit(1)
@@ -54,12 +49,14 @@ async function siguienteOrden(
   return (data?.orden ?? 0) + 1;
 }
 
-export async function crearElemento(cicloId: string, sistemaId: string, datos: DatosElemento): Promise<Elemento> {
+/** El catálogo ya no cuelga de ningún ciclo (docs/decisiones.md D-26): un
+ * elemento nuevo se da de alta una sola vez y persiste. */
+export async function crearElemento(sistemaId: string, datos: DatosElemento): Promise<Elemento> {
   const supabase = await createClient();
-  const orden = await siguienteOrden(supabase, cicloId, sistemaId);
+  const orden = await siguienteOrden(supabase, sistemaId);
   const { data, error } = await supabase
     .from("elementos")
-    .insert({ ciclo_id: cicloId, sistema_id: sistemaId, ...datos, orden })
+    .insert({ sistema_id: sistemaId, ...datos, orden })
     .select(SELECT_ELEMENTO)
     .single();
   if (error) throw error;
@@ -72,25 +69,26 @@ export async function crearElemento(cicloId: string, sistemaId: string, datos: D
  * código nuevo — docs/modelo-de-datos.md §5 deriva la ruta del código —
  * y actualiza fotos.ruta. Ninguna fotografía se pierde ni se re-sube
  * (Flujo 5: "el sistema lo hace y avisa").
+ *
+ * Un elemento persiste entre ciclos (docs/decisiones.md D-26), así que
+ * puede tener un registro por cada ciclo en que se supervisó, cada uno
+ * con sus fotos bajo la ruta de SU propio ciclo — no sólo el abierto. Por
+ * eso ya no recibe `cicloClave`: cada registro trae el suyo.
  */
-export async function actualizarElemento(
-  elementoId: string,
-  cicloClave: string,
-  sistemaClave: string,
-  codigoAnterior: string,
-  datos: DatosElemento,
-) {
+export async function actualizarElemento(elementoId: string, sistemaClave: string, codigoAnterior: string, datos: DatosElemento) {
   const supabase = await createClient();
 
   if (datos.codigo !== codigoAnterior) {
-    const { data: registro, error: errorRegistro } = await supabase
+    const { data: registros, error: errorRegistros } = await supabase
       .from("registros")
-      .select("id")
-      .eq("elemento_id", elementoId)
-      .maybeSingle();
-    if (errorRegistro) throw errorRegistro;
+      .select("id, ciclo:ciclos(clave)")
+      .eq("elemento_id", elementoId);
+    if (errorRegistros) throw errorRegistros;
 
-    if (registro) {
+    for (const registro of registros ?? []) {
+      const ciclo = Array.isArray(registro.ciclo) ? registro.ciclo[0] : registro.ciclo;
+      if (!ciclo) continue;
+
       const { data: fotos, error: errorFotos } = await supabase
         .from("fotos")
         .select("id, momento, ruta, orden")
@@ -98,7 +96,7 @@ export async function actualizarElemento(
       if (errorFotos) throw errorFotos;
 
       for (const foto of fotos ?? []) {
-        const rutaNueva = rutaFoto(cicloClave, sistemaClave, datos.codigo, foto.momento, foto.orden);
+        const rutaNueva = rutaFoto(ciclo.clave as string, sistemaClave, datos.codigo, foto.momento, foto.orden);
         if (rutaNueva === foto.ruta) continue;
         const { error: errorMove } = await supabase.storage.from(DEPOSITO).move(foto.ruta, rutaNueva);
         if (errorMove) throw errorMove;

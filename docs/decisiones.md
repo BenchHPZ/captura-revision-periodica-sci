@@ -1413,3 +1413,75 @@ RAG, "Oficinas" empieza a media hoja sin repetir el membrete — el defecto que 
 `web/components/Campo.tsx`; `web/app/(app)/rag/ConstructorChecklist.tsx`, `ConstructorFormatoRag.tsx`,
 `actions.ts`, `[formato]/page.tsx`; `web/app/(app)/sistemas/[clave]/page.tsx`, `FormatoEditor.tsx`,
 `actions.ts`; `web/scripts/verificar-checklist.ts`, `verificar-rag.ts`.
+
+## D-26 · `elementos` deja de pertenecer a un ciclo: catálogo persistente, captura mensual
+
+**Contexto.** `elementos.ciclo_id` era `not null` y formaba parte de su llave única
+(`unique (ciclo_id, sistema_id, codigo)`). Cada vez que se abría un ciclo (hoy sólo por
+`scripts/cargar_catalogo.py`, a mano, una vez al mes — ver D-21), el catálogo completo se volvía a
+**insertar como filas nuevas** con el `ciclo_id` del ciclo nuevo: el `upsert` conciliaba contra
+`(ciclo_id, sistema_id, codigo)`, así que nunca encontraba la fila del ciclo anterior y siempre creaba
+un `id` nuevo, aunque representara el mismo elemento físico. Un hidrante no cambia de identidad porque
+cambie el mes; lo que sí cambia mes a mes es si se revisó y qué se encontró.
+
+**Decisión.** `elementos` pasa a ser el catálogo persistente de la planta, igual que `sistemas` y
+`zonas` (mismo espíritu que D-18): una sola fila por elemento físico, que se edita cuando algo real
+cambia (ubicación, responsable, zona) y se da de baja sin borrar (patrón `activo` ya existente). La
+unicidad pasa de `(ciclo_id, sistema_id, codigo)` a `(sistema_id, codigo)`.
+
+Lo que sí sigue siendo mensual es la captura. `registros.elemento_id` era `unique` a secas — "un
+registro por elemento en toda su vida" — y eso sólo funcionaba porque cada ciclo ya tenía su propio
+`elemento.id`. En cuanto `elementos` dejó de duplicarse por ciclo, esa restricción habría impedido
+capturar el mismo elemento dos meses seguidos. La solución: el ciclo se mueve de `elementos` a
+`registros`, que gana su propio `ciclo_id` y cambia su unicidad a `(elemento_id, ciclo_id)` — un
+registro por elemento **y por ciclo**, que es justo la semántica que el modelo de datos ya describía
+en prosa ("un renglón por elemento y ciclo") sin que la restricción la garantizara literalmente.
+`fotos` no cambia (cuelga de `registro_id`); `plantillas` tampoco (sigue por `(ciclo_id, sistema_id)`,
+fuera del alcance de este cambio).
+
+**Migración de datos reales.** No fue un cambio sólo de esquema: la base ya tenía filas de `elementos`
+repetidas por cada ciclo abierto. La migración (`0012_elementos_persistentes.sql`) colapsa cada grupo
+`(sistema_id, codigo)` en una sola fila **canónica** — la del ciclo más reciente por `(anio, mes)` — y
+reasigna los `registros` de las filas descartadas hacia la canónica, poblando `ciclo_id` con el que
+tenía su elemento original antes de colapsar. Es seguro sin colisión: cada fila vieja de `elementos`
+pertenecía a un solo ciclo, así que a lo más un registro por ciclo llega a cada canónico.
+Consecuencia explícita, no un defecto: si `nombre`/`ubicación`/`zona_id`/`activo` diferían entre
+ciclos para el mismo `(sistema_id, codigo)`, sólo sobrevive el valor del ciclo más reciente — es la
+semántica de "persiste hasta que se edite directo" que se pidió. Antes de aplicar se corrió una
+auditoría de sólo lectura para detectar el caso contrario (un código reciclado para un elemento físico
+*distinto* entre ciclos, como ya documenta D-13 con `HC1-1`): sobre los datos reales de este proyecto,
+246 filas de `elementos`, todas del ciclo 2026-08 (el ciclo abierto, 2026-09, todavía no tenía su
+propio catálogo cargado) — cero grupos duplicados, cero casos sospechosos. La migración resultó, en la
+práctica, un cambio de esquema limpio sin colapso real de datos que hacer.
+
+**Qué deja de hacer `cargar_catalogo.py`.** Ya no clona: el `upsert` concilia por `(sistema_id,
+codigo)` contra el catálogo completo, así que recargar el mismo elemento en un ciclo nuevo actualiza su
+fila existente en vez de duplicarla. La desactivación ("ya no aparece en el archivo") deja de
+compararse sólo contra lo que el propio script acaba de escribir para el ciclo nuevo (que casi nunca
+desactivaba nada) y pasa a compararse contra **todo** el catálogo activo — un cambio de alcance real y
+deseado. Sigue recibiendo `--ciclo`: sigue creando/asegurando la fila de `ciclos` y escribiendo
+`plantillas` por ciclo, que no cambiaron.
+
+**El candado de seguridad se mueve, no desaparece.** Antes, `ciclo_id` en `elementos` evitaba abrir un
+`id` de otro ciclo desde `/capturar/[sistema]/[id]`. Ahora esa pregunta no aplica (el elemento no
+"pertenece" a ningún ciclo); el candado real pasa a `registros`/`aseguraRegistro`/`obtenerRegistro`,
+que exigen `cicloId` — derivado siempre de `obtenerCicloAbierto()` en el servidor, nunca de un
+parámetro de formulario — y la restricción `unique(elemento_id, ciclo_id)` lo refuerza a nivel de base.
+
+**Consecuencia en `actualizarElemento`.** Cambiar el código de un elemento con capturas de varios
+ciclos ya no renombra un único registro: itera sobre TODOS sus registros y mueve las fotos de cada uno
+con la `cicloClave` **propia de ese registro**, no la del ciclo abierto — si no, las fotos de ciclos
+anteriores quedarían con una ruta que no corresponde a su ciclo real.
+
+**Verificado empíricamente antes de escribir el código**: que PostgREST/supabase-js filtran un recurso
+embebido (`registro:registros(...)`) como un LEFT JOIN filtrado y no como un INNER JOIN — una fila de
+`elementos` sin registro de ese ciclo llega con `registro: null`, nunca se descarta — incluso cuando la
+columna del filtro (`ciclo_id`) no está en la lista de `select` del embed. Probado contra datos reales
+con una columna que ya existía (`registros.estado`) antes de comprometer el diseño a `registros.ciclo_id`
+(que sólo existe después de la migración).
+
+**Archivos:** `supabase/migrations/0012_elementos_persistentes.sql`; `web/lib/tipos.ts`, `datos.ts`,
+`registros.ts`; `web/app/(app)/capturar/[sistema]/[id]/actions.ts`, `page.tsx`;
+`web/app/(app)/recepcion/actions.ts`; `web/app/(app)/sistemas/[clave]/actions.ts`,
+`ElementosCatalogo.tsx`, `page.tsx`; `web/app/(app)/configuracion/actions.ts`,
+`PanelImportarExportar.tsx`, `page.tsx`; `scripts/cargar_catalogo.py`.

@@ -20,21 +20,26 @@ ciclo mensual de revisión.
 Se ejecuta una vez, antes del primer día de ejecución.
 
 1. El encargado corre `python scripts/cargar_catalogo.py --ciclo <AAAA-MM> --confirmar` desde su
-   equipo. Todavía no hay pantalla para esto — abrir un ciclo clonando el anterior es una operación
-   de una vez al mes, bastante más compleja que ajustar uno ya abierto (ver docs/decisiones.md D-21).
+   equipo. Todavía no hay pantalla para esto — es una operación de una vez al mes, bastante más
+   compleja que ajustar un ciclo ya abierto (ver docs/decisiones.md D-21). El catálogo (`elementos`)
+   ya no se clona: desde D-26 persiste entre ciclos, así que este paso sólo actualiza las filas que
+   cambiaron y da de alta las nuevas — el elemento que no cambió ni se toca.
 2. El script propone la clave `2026-08` y el nombre `Agosto 2026`, y cierra el ciclo anterior — a
    partir de ese momento sólo hay uno abierto.
 3. Desde **Configuración → Ciclo**, el encargado ajusta nombre, fechas, qué sistemas quedan activos
    y cuáles se capturan directo.
 4. Desde **Configuración → Sistemas** y **Configuración → Zonas**, da de alta lo que falte del
    catálogo compartido antes de tocar elementos.
-5. Desde cada **sistema** (`/sistemas/[clave]`), ajusta el catálogo de elementos del mes (altas,
-   bajas, reasignación de responsables) y revisa la plantilla de puntos de revisión.
+5. Desde cada **sistema** (`/sistemas/[clave]`), ajusta el catálogo de elementos (altas, bajas,
+   reasignación de responsables — persiste hasta el próximo ajuste, no sólo para este mes) y revisa
+   la plantilla de puntos de revisión del ciclo.
 
-**Resultado:** catálogo y plantillas listos; todos los elementos en estado `sin_iniciar`.
+**Resultado:** catálogo listo (el mismo de siempre más los ajustes del mes) y plantillas del ciclo
+nuevo listas; todos los elementos activos, sin registro todavía en este ciclo, arrancan en
+`sin_iniciar`.
 
-En el primer ciclo no hay de dónde clonar: el catálogo se carga importando el JSON que produce el
-script de extracción de los formatos RAG, y se corrige desde `/sistemas/[clave]` o desde
+En el primer ciclo no hay catálogo previo: se carga importando el JSON que produce el script de
+extracción de los formatos RAG, y se corrige desde `/sistemas/[clave]` o desde
 **Configuración → Importar y exportar**.
 
 ---

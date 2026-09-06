@@ -16,7 +16,7 @@ export default async function ConfiguracionPage() {
   const porSistema = await Promise.all(
     sistemas.map(async (sistema) => {
       const [elementos, plantilla] = await Promise.all([
-        obtenerElementosCatalogo(supabase, ciclo.id, sistema.id),
+        obtenerElementosCatalogo(supabase, sistema.id),
         obtenerPlantilla(supabase, ciclo.id, sistema.id),
       ]);
       return { sistema, elementos, plantilla };

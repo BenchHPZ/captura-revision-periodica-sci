@@ -29,13 +29,13 @@ export default async function ElementoPage({
   // los sistemas activos del ciclo, no sólo contra captura_directa.
   if (!sistema || !ciclo.config.sistemas_activos?.includes(sistema.clave)) notFound();
 
-  const elemento = await obtenerElemento(supabase, ciclo.id, sistema.id, id);
+  const elemento = await obtenerElemento(supabase, sistema.id, id);
   if (!elemento) notFound();
 
   const plantilla = await obtenerPlantilla(supabase, ciclo.id, sistema.id);
   if (!plantilla) notFound();
 
-  const { registro, fotos } = await obtenerRegistro(supabase, elemento.id);
+  const { registro, fotos } = await obtenerRegistro(supabase, elemento.id, ciclo.id);
   const urls = await firmarRutas(
     supabase,
     fotos.map((f) => f.ruta),

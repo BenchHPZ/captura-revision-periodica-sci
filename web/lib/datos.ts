@@ -87,13 +87,18 @@ export async function obtenerElementos(
   cicloId: string,
   sistemaId: string,
 ): Promise<ElementoConEstado[]> {
+  // 'elementos' es el catálogo persistente (docs/decisiones.md D-26): ya
+  // no se filtra por ciclo. Lo que sí es por ciclo es la captura, así que
+  // el filtro se mueve al recurso embebido — PostgREST lo aplica como un
+  // LEFT JOIN filtrado (verificado contra datos reales): una fila sin
+  // registro de ESE ciclo llega con `registro: null`, nunca se descarta.
   const { data, error } = await supabase
     .from("elementos")
     .select(
-      "id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion, registro:registros(id, estado)",
+      "id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion, registro:registros(id, estado)",
     )
-    .eq("ciclo_id", cicloId)
     .eq("sistema_id", sistemaId)
+    .eq("registros.ciclo_id", cicloId)
     .eq("activo", true)
     .order("orden");
   if (error) throw error;
@@ -123,18 +128,14 @@ export function contarPorEstado(elementos: ElementoConEstado[]): ConteoPorEstado
 
 /** Para el catálogo (Flujo 5): trae activos e inactivos — a diferencia de
  * obtenerElementos, que sólo trae los activos porque alimenta las
- * pantallas de captura. */
-export async function obtenerElementosCatalogo(
-  supabase: SupabaseClient,
-  cicloId: string,
-  sistemaId: string,
-): Promise<Elemento[]> {
+ * pantallas de captura. Ya no depende de ningún ciclo (docs/decisiones.md
+ * D-26): el catálogo persiste hasta que se edita directamente. */
+export async function obtenerElementosCatalogo(supabase: SupabaseClient, sistemaId: string): Promise<Elemento[]> {
   const { data, error } = await supabase
     .from("elementos")
     .select(
-      "id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion, zona_id, orden_anclado",
+      "id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion, zona_id, orden_anclado",
     )
-    .eq("ciclo_id", cicloId)
     .eq("sistema_id", sistemaId)
     .order("orden");
   if (error) throw error;
@@ -157,10 +158,10 @@ export async function obtenerElementosTablero(
   const { data, error } = await supabase
     .from("elementos")
     .select(
-      "id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion, registro:registros(id, estado, capturado_por, actualizado, fotos(momento))",
+      "id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion, registro:registros(id, estado, capturado_por, actualizado, fotos(momento))",
     )
-    .eq("ciclo_id", cicloId)
     .eq("sistema_id", sistemaId)
+    .eq("registros.ciclo_id", cicloId)
     .eq("activo", true)
     .order("orden");
   if (error) throw error;
@@ -205,8 +206,8 @@ export async function obtenerElementosParaImpacto(
     .select(
       "id, registro:registros(id, estado, como_se_encontro, que_se_realizo, pendientes, valores, fotos(momento))",
     )
-    .eq("ciclo_id", cicloId)
     .eq("sistema_id", sistemaId)
+    .eq("registros.ciclo_id", cicloId)
     .eq("activo", true);
   if (error) throw error;
 
@@ -269,8 +270,8 @@ export async function obtenerElementosParaInforme(
     .select(
       "id, codigo, nombre, ubicacion, referencia, tipo, responsable, orden_anclado, orden, zona:zonas(nombre, orden), registro:registros(id, como_se_encontro, que_se_realizo, pendientes, valores, estado, fotos(id, momento, ruta, orden))",
     )
-    .eq("ciclo_id", cicloId)
     .eq("sistema_id", sistemaId)
+    .eq("registros.ciclo_id", cicloId)
     .eq("activo", true)
     .order("orden");
   if (error) throw error;
@@ -296,17 +297,19 @@ export async function obtenerPlantilla(
   return data as Plantilla | null;
 }
 
+/** El elemento es el catálogo persistente (docs/decisiones.md D-26): ya
+ * no "pertenece" a un ciclo, así que ya no se filtra por ciclo_id. El
+ * candado real de "esto existe para capturar en el ciclo abierto" ahora
+ * vive en obtenerRegistro()/aseguraRegistro(), que sí exigen cicloId. */
 export async function obtenerElemento(
   supabase: SupabaseClient,
-  cicloId: string,
   sistemaId: string,
   elementoId: string,
 ): Promise<Elemento | null> {
   const { data, error } = await supabase
     .from("elementos")
-    .select("id, ciclo_id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion")
+    .select("id, sistema_id, codigo, nombre, zona, ubicacion, tipo, responsable, item_rag, orden, activo, notas, referencia, seccion, orden_seccion")
     .eq("id", elementoId)
-    .eq("ciclo_id", cicloId)
     .eq("sistema_id", sistemaId)
     .maybeSingle();
   if (error) throw error;
@@ -318,16 +321,22 @@ export interface RegistroConFotos {
   fotos: Foto[];
 }
 
+/** Un elemento puede tener un registro por cada ciclo en que se
+ * supervisó (docs/decisiones.md D-26) — cicloId ya no es opcional: sin
+ * él, en cuanto un elemento acumule registros de 2+ ciclos esta consulta
+ * dejaría de tener un resultado único. */
 export async function obtenerRegistro(
   supabase: SupabaseClient,
   elementoId: string,
+  cicloId: string,
 ): Promise<RegistroConFotos> {
   const { data: registro, error } = await supabase
     .from("registros")
     .select(
-      "id, elemento_id, como_se_encontro, que_se_realizo, pendientes, valores, estado, capturado_por, creado, actualizado",
+      "id, elemento_id, ciclo_id, como_se_encontro, que_se_realizo, pendientes, valores, estado, capturado_por, creado, actualizado",
     )
     .eq("elemento_id", elementoId)
+    .eq("ciclo_id", cicloId)
     .maybeSingle();
   if (error) throw error;
   if (!registro) return { registro: null, fotos: [] };
@@ -423,8 +432,8 @@ export async function obtenerElementosParaRag(
     .select(
       "id, nombre, ubicacion, referencia, tipo, orden_anclado, orden, zona:zonas(nombre, orden), registro:registros(valores, pendientes)",
     )
-    .eq("ciclo_id", cicloId)
     .eq("sistema_id", sistemaId)
+    .eq("registros.ciclo_id", cicloId)
     .eq("activo", true)
     .order("orden");
   if (error) throw error;

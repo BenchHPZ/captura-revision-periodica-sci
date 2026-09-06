@@ -10,12 +10,12 @@ Supabase Storage y la base conserva únicamente su ruta.
 ```mermaid
 erDiagram
     ciclos ||--o{ plantillas : "define por ciclo"
-    ciclos ||--o{ elementos : "cataloga por ciclo"
+    ciclos ||--o{ registros : "captura por ciclo"
     ciclos ||--o{ entrada : "recibe por ciclo"
     sistemas ||--o{ plantillas : "una por sistema"
     sistemas ||--o{ elementos : "clasifica"
     sistemas ||--o{ formatos : "define su documento"
-    elementos ||--o| registros : "lo capturado"
+    elementos ||--o{ registros : "lo capturado, uno por ciclo"
     registros ||--o{ fotos : "sus fotografías"
     entrada |o--o| fotos : "al asignar (Flujo 3)"
     formatos ||--o{ checklist_bloques : "sólo tipo_documento='checklist'"
@@ -26,16 +26,18 @@ Tres conjuntos con ciclos de vida distintos:
 
 | Conjunto | Tablas | Quién lo modifica | Cuándo |
 |---|---|---|---|
-| **Configuración** | `ciclos`, `sistemas`, `formatos` | Encargado de sistemas | Al abrir el ciclo; `formatos` sólo cuando cambia el documento oficial, no cada mes |
-| **Catálogo** | `elementos`, `plantillas` | Encargado de sistemas | Al abrir el ciclo y durante la ejecución |
-| **Resultados** | `registros`, `fotos`, `entrada` | Quien captura | Durante la ejecución |
+| **Persistente** | `sistemas`, `zonas`, `elementos`, `formatos` | Encargado de sistemas | Se edita cuando cambia algo real (ubicación, responsable, zona); no se repite cada mes |
+| **Configuración del ciclo** | `ciclos`, `plantillas` | Encargado de sistemas | Al abrir el ciclo |
+| **Resultados** | `registros`, `fotos`, `entrada` | Quien captura | Durante la ejecución — uno por elemento y por ciclo |
 | **Checklist** | `checklist_bloques`, `checklist_items` | Encargado de sistemas | Al definir un tipo de checklist nuevo — no depende de ningún ciclo |
 
-Todo cuelga de `ciclos`. Un ciclo es un mes de revisión; cerrar uno y abrir el siguiente no toca los
-datos del anterior. `formatos` es la excepción: no cuelga de ningún ciclo — es la identidad y la
-imagen de un RAG o de un checklist, estable entre meses (ver §2.8). `checklist_bloques`/
-`checklist_items` tampoco cuelgan de ningún ciclo, por la misma razón: son el contenido fijo de un
-tipo de documento, no algo que se capture mes a mes (ver §2.10, §2.11 y docs/decisiones.md D-22).
+`elementos` es el catálogo persistente de la planta: una sola fila por elemento físico, que sobrevive
+a cerrar un ciclo y abrir el siguiente (ver docs/decisiones.md D-26 — antes cada ciclo duplicaba el
+catálogo completo como filas nuevas). Lo que sí es mensual es la captura: `registros` lleva su propio
+`ciclo_id`, así que el mismo elemento acumula un registro por cada ciclo en que se supervisó.
+`plantillas` sigue por `(ciclo_id, sistema_id)`, sin cambios. `formatos` tampoco cuelga de ningún
+ciclo — es la identidad y la imagen de un RAG o de un checklist, estable entre meses (ver §2.8).
+`checklist_bloques`/`checklist_items` tampoco, por la misma razón (ver §2.10, §2.11 y D-22).
 
 ---
 
@@ -108,21 +110,22 @@ Restricción: única por `(ciclo_id, sistema_id)`.
 
 ### 2.4 `elementos`
 
-Define **qué se revisa**. Es el catálogo del ciclo.
+Define **qué se revisa**. Es el catálogo persistente de la planta — no pertenece a ningún ciclo
+(ver docs/decisiones.md D-26): un elemento se da de alta una vez y persiste con sus datos hasta que
+alguien lo edite directamente. Lo mensual es la captura, en `registros` (§2.5), no el catálogo.
 
 | Campo | Tipo | Nulo | Descripción |
 |---|---|---|---|
 | `id` | uuid | no | Llave primaria interna |
-| `ciclo_id` | uuid | no | Referencia a `ciclos` |
 | `sistema_id` | uuid | no | Referencia a `sistemas` |
 | `codigo` | text | no | **Identificador único del elemento**, asignado por el área. Ejemplo: `AV-Z1-101` |
 | `nombre` | text | no | Rótulo que lleva en campo. Ejemplo: `ELEM. 101` |
 | `ubicacion` | text | sí | Coordenada o referencia física. Ejemplo: `A01-02` |
 | `tipo` | text | sí | Clave del diccionario `sistemas.tipos` del elemento (p. ej. `G`), no el nombre completo. Ver docs/decisiones.md D-18 |
-| `responsable` | text | sí | Persona asignada en el reparto del ciclo |
+| `responsable` | text | sí | Persona asignada para revisar el elemento — atributo del catálogo, no de un ciclo en particular; se reasigna editando el elemento directamente |
 | `item_rag` | smallint | sí | Número de renglón en el formato RAG, para conciliar |
 | `orden` | integer | no | Heredado de la extracción original; ya no decide el recorrido — ver `orden_anclado` y §3.6 |
-| `activo` | boolean | no | Falso retira el elemento del ciclo sin borrar lo capturado |
+| `activo` | boolean | no | Baja recuperable — retira el elemento del catálogo activo sin borrar lo ya capturado en ningún ciclo. Mismo patrón que `sistemas.activo`/`zonas.activo` (D-18) |
 | `notas` | text | sí | Observaciones del catálogo, no de la revisión |
 | `referencia` | text | sí | Ayuda corta a la ubicación (≤5 palabras), para distinguir elementos próximos o similares. Columna opcional del documento RAG — ver `formatos.columnas` |
 | `zona_id` | uuid | sí | Referencia a `zonas` (§2.9). Agrupador vigente del documento RAG y del informe fotográfico. `null` = todavía sin asignar |
@@ -131,8 +134,9 @@ Define **qué se revisa**. Es el catálogo del ciclo.
 | `seccion` | text | sí | **Sustituido por `zona_id`** (era el agrupador de D-15). Se conserva sin leerse |
 | `orden_seccion` | smallint | sí | **Sustituido por `zonas.orden`**. Se conserva sin leerse |
 
-Restricción: `codigo` único por `(ciclo_id, sistema_id, codigo)` — dentro de su sistema, no en todo
-el ciclo.
+Restricción: `codigo` único por `(sistema_id, codigo)` — dentro de su sistema, no en toda la planta.
+Antes de D-26 la unicidad incluía `ciclo_id`; el criterio de "dentro de su sistema, no del ciclo" no
+cambió, sólo el ciclo dejó de ser parte de la llave.
 
 > `zona`, `seccion` y `orden_seccion` quedaron en el esquema sin usarse a propósito: la cadena de
 > migraciones de este repositorio no se puede reconstruir desde cero sobre una base limpia (ver
@@ -153,12 +157,14 @@ el ciclo.
 
 ### 2.5 `registros`
 
-Lo capturado para un elemento. Un renglón por elemento y ciclo.
+Lo capturado para un elemento. Un renglón por elemento **y por ciclo** — desde D-26 el elemento
+persiste entre ciclos, así que es aquí, no en `elementos`, donde vive el corte mensual.
 
 | Campo | Tipo | Nulo | Descripción |
 |---|---|---|---|
 | `id` | uuid | no | Llave primaria |
-| `elemento_id` | uuid | no | Referencia a `elementos`. Único |
+| `elemento_id` | uuid | no | Referencia a `elementos` |
+| `ciclo_id` | uuid | no | Referencia a `ciclos`. Junto con `elemento_id`, único: a lo más un registro por elemento y ciclo. Ver docs/decisiones.md D-26 |
 | `como_se_encontro` | text | sí | Descripción del estado inicial |
 | `que_se_realizo` | text | sí | Mantenimiento correctivo y limpieza aplicados |
 | `pendientes` | text | sí | Lo que quedó abierto por falta de insumos o mantenimiento mayor. También alimenta la columna Observaciones del documento RAG — ver docs/decisiones.md D-15 §7.2; no hay una columna `observaciones` aparte |
@@ -461,8 +467,12 @@ para editar en pantalla, no hay importador que los concilie todavía.
 }
 ```
 
-La importación concilia por `(sistema, codigo)`: lo que existe se actualiza, lo que no existe se da
-de alta, y lo que ya no aparece en el archivo se marca `activo = false` en lugar de borrarse.
+La importación concilia por `(sistema, codigo)` contra **todo** el catálogo persistente, sin importar
+en qué ciclo se haya dado de alta cada elemento originalmente (docs/decisiones.md D-26): lo que existe
+se actualiza en su misma fila, lo que no existe se da de alta, y lo que ya no aparece en el archivo se
+marca `activo = false` en lugar de borrarse. `"ciclo"` en el nivel superior es sólo informativo (queda
+en el archivo para trazabilidad de cuándo se exportó); no se usa para conciliar ni se guarda en
+`elementos`.
 
 > Este formato de intercambio todavía usa `zona`/`seccion`/`orden_seccion`, no `zona_id`/`tipo`-como-
 > clave. La pantalla de edición (`/sistemas/[clave]`) ya usa los campos de §2.9 y §3.6 — sólo el JSON
@@ -704,11 +714,11 @@ Volumen estimado: 221 elementos × 2 fotografías × 1 MB ≈ 440 MB por ciclo.
 | Único parcial sobre `ciclos.estado` | sólo un `abierto` | Evita ambigüedad sobre el ciclo vigente |
 | `sistemas.clave` | único | Referencia estable desde configuración y plantillas |
 | `plantillas (ciclo_id, sistema_id)` | único | Una plantilla por sistema y ciclo |
-| `elementos (ciclo_id, sistema_id, codigo)` | único | Identificador único dentro de su sistema |
-| `elementos (ciclo_id, sistema_id, orden)` | índice | Consulta por sistema; el orden de recorrido real lo calcula §3.6, no esta columna |
+| `elementos (sistema_id, codigo)` | único | Identificador único dentro de su sistema, sin importar el ciclo (D-26) |
+| `elementos (sistema_id, orden)` | índice | Consulta por sistema; el orden de recorrido real lo calcula §3.6, no esta columna |
 | `zonas.clave` | único | Referencia estable desde importación de catálogo |
 | `elementos.zona_id` | referencia a `zonas`, `on delete restrict` | No se puede borrar una zona con elementos asignados |
-| `registros.elemento_id` | único | Un registro por elemento |
+| `registros (elemento_id, ciclo_id)` | único | Un registro por elemento y por ciclo (D-26) |
 | `registros (estado)` | índice | Consultas del tablero |
 | `fotos (registro_id, momento, orden)` | índice | Armado del formulario y del collage |
 | `fotos.ruta` | único | Evita duplicar objetos |

@@ -187,7 +187,6 @@ export interface Ciclo {
 
 export interface Elemento {
   id: string;
-  ciclo_id: string;
   sistema_id: string;
   codigo: string;
   nombre: string;
@@ -227,6 +226,10 @@ export type ValorPunto = boolean | string | number | null;
 export interface Registro {
   id: string;
   elemento_id: string;
+  /** Un elemento persiste entre ciclos (docs/decisiones.md D-26); la
+   * captura no — cada ciclo tiene su propio registro para el mismo
+   * elemento, distinguido por este campo. */
+  ciclo_id: string;
   como_se_encontro: string | null;
   que_se_realizo: string | null;
   /** Alimenta la columna Observaciones del documento RAG — ver

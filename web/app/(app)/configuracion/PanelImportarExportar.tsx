@@ -56,7 +56,7 @@ export function PanelImportarExportar({ ciclo, catalogoCompleto, plantillasCompl
     try {
       const texto = await archivo.text();
       const catalogo = JSON.parse(texto) as CatalogoImportado;
-      const resultado = await previsualizarImportacion(ciclo.id, catalogo);
+      const resultado = await previsualizarImportacion(catalogo);
       setEstadoCatalogo({ fase: "vista_previa", catalogo, resultado });
     } catch (error) {
       setEstadoCatalogo({ fase: "error", mensaje: error instanceof Error ? error.message : "No se pudo leer el archivo." });
@@ -67,7 +67,7 @@ export function PanelImportarExportar({ ciclo, catalogoCompleto, plantillasCompl
     if (estadoCatalogo.fase !== "vista_previa") return;
     setEstadoCatalogo({ fase: "aplicando" });
     try {
-      const resultado = await confirmarImportacion(ciclo.id, estadoCatalogo.catalogo);
+      const resultado = await confirmarImportacion(estadoCatalogo.catalogo);
       setEstadoCatalogo({ fase: "aplicado", resultado });
       router.refresh();
     } catch (error) {
